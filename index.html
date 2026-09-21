@@ -418,7 +418,18 @@ async function start() {
         setSaveStatus("Sparat i molnet ✓", false);
       } catch (err) {
         console.error("Kunde inte läsa data", err);
-        setSaveStatus("Kunde inte nå molnet – visar lokal data. Kontrollera Firestore-regler/database.", true);
+        const code = (err && err.code) || (err && err.message) || "okänt fel";
+        let text;
+        if (code === "permission-denied") {
+          text = "Åtkomst nekad av Firestore-reglerna – publicera regeln (se README) under Firestore → Rules.";
+        } else if (code === "timeout") {
+          text = "Molnet svarade inte (timeout) – kontrollera att Firestore Database är skapad i projektet amp-grazing.";
+        } else if (code === "unavailable" || code === "failed-precondition") {
+          text = "Firestore gick inte att nå (" + code + ") – kontrollera nätverk och att databasen finns i projektet amp-grazing.";
+        } else {
+          text = "Kunde inte nå molnet – visar lokal data. Felkod: " + code;
+        }
+        setSaveStatus(text, true);
       }
     } else {
       currentUser = null;
