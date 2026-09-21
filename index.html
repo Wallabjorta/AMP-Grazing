@@ -514,7 +514,7 @@ function initMap() {
     }
     const p = paddockById(id);
     p.boundary = drawPoints.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6]);
-    if (p.sizeHa == null) p.sizeHa = polygonAreaHa(p.boundary);
+    p.sizeHa = polygonAreaHa(p.boundary);
     save();
     drawMode = false;
     drawPoints = [];
@@ -710,8 +710,7 @@ function importGpx(text) {
       const target = byName || (unassigned.length ? unassigned.shift() : null);
       if (!target) return;
       target.boundary = poly.points;
-      const ha = polygonAreaHa(poly.points);
-      if (target.sizeHa == null || target.sizeHa === 0) target.sizeHa = ha;
+      target.sizeHa = polygonAreaHa(poly.points);
       assigned++;
     });
     if (!assigned) {
