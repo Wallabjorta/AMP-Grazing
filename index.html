@@ -201,10 +201,10 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
 <div id="app" hidden>
 <header>
   <h1>🐄 AMP Betesflytt</h1>
-  <p>Registrera och följ dina djurs flyttningar mellan betesmarker</p>
+  <p>Registrera och följ dina djurs flyttar mellan betesmarker</p>
   <nav id="nav">
     <button data-tab="overview" class="active">Översikt</button>
-    <button data-tab="moves">Flyttningar</button>
+    <button data-tab="moves">Flyttar</button>
     <button data-tab="paddocks">Betesmarker</button>
     <button data-tab="herds">Djurgrupper</button>
     <button data-tab="stats">Statistik</button>
@@ -601,7 +601,7 @@ function renderOverview() {
         <ol>
           <li>Lägg till dina <strong>betesmarker</strong> under fliken Betesmarker.</li>
           <li>Lägg till dina <strong>djurgrupper</strong> under fliken Djurgrupper.</li>
-          <li>Registrera första <strong>flyttningen</strong> när djuren släpps in på en mark (välj "– ingen –" som från-mark).</li>
+          <li>Registrera första <strong>flytten</strong> när djuren släpps in på en mark (välj "– ingen –" som från-mark).</li>
         </ol>
         <p class="note">Allt sparas lokalt i webbläsaren. Ta gärna backup då och då under fliken Data.</p>
       </div>`;
@@ -621,7 +621,7 @@ function renderOverview() {
       daysHtml = `Dagar på marken: <span class="days">${daysOnMark}</span>` +
         (isInternal ? ` &middot; i nuvarande område: <span class="days">${daysBetween(arr.date, todayIso())}</span>` : "");
     } else {
-      nowHtml = `<span class="empty">Ingen registrerad flyttning ännu</span>`;
+      nowHtml = `<span class="empty">Ingen registrerad flytt ännu</span>`;
       daysHtml = "";
     }
     const allMoves = movesForHerd(h.id);
@@ -632,9 +632,9 @@ function renderOverview() {
         <div class="name">${esc(h.name)} <span class="badge">${h.count} djur</span></div>
         <div class="now">${nowHtml}</div>
         <div class="now">${daysHtml}</div>
-        <div class="meta">${moveCount} flyttningar registrerade${internalCount ? " (" + internalCount + " inom marken)" : ""}</div>
+        <div class="meta">${moveCount} flyttar registrerade${internalCount ? " (" + internalCount + " inom marken)" : ""}</div>
         <div style="margin-top:10px">
-          <button class="secondary small" data-action="quick-move" data-herd="${h.id}">Registrera flyttning</button>
+          <button class="secondary small" data-action="quick-move" data-herd="${h.id}">Registrera flytt</button>
         </div>
       </div>`;
   }).join("");
@@ -686,7 +686,7 @@ function renderMoves() {
 
   el.innerHTML = `
     <div class="card">
-      <h2>Registrera flyttning</h2>
+      <h2>Registrera flytt</h2>
       ${state.herds.length && state.paddocks.length ? `
         <form id="move-form" class="inline">
           <label>Djurgrupp
@@ -717,20 +717,20 @@ function renderMoves() {
           <label>Anteckning
             <input type="text" name="note" placeholder="Valfritt">
           </label>
-          <button type="submit" class="primary">Spara flyttning</button>
+          <button type="submit" class="primary">Spara flytt</button>
         </form>
         <p class="note" id="move-msg"></p>` : `
-        <p class="empty">Du behöver minst en djurgrupp och en betesmark innan du kan registrera flyttningar.</p>
+        <p class="empty">Du behöver minst en djurgrupp och en betesmark innan du kan registrera flyttar.</p>
         <button class="secondary" data-action="goto" data-tab="paddocks">Lägg till betesmark</button>
         <button class="secondary" data-action="goto" data-tab="herds">Lägg till djurgrupp</button>`}
     </div>
     <div class="card">
-      <h2>Registrerade flyttningar (${state.moves.length})</h2>
+      <h2>Registrerade flyttar (${state.moves.length})</h2>
       ${state.moves.length ? `
         <table>
           <thead><tr><th>Datum</th><th>Grupp</th><th>Flytt</th><th class="num">Yta</th><th class="hide-sm">Anteckning</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
-        </table>` : '<p class="empty">Inga flyttningar registrerade än.</p>'}
+        </table>` : '<p class="empty">Inga flyttar registrerade än.</p>'}
     </div>`;
 
   const form = document.getElementById("move-form");
@@ -885,7 +885,7 @@ function renderHerds() {
       <h2>Djurgrupper (${state.herds.length})</h2>
       ${state.herds.length ? `
         <table>
-          <thead><tr><th>Grupp</th><th class="num">Djur</th><th>Betar nu</th><th class="num">Flyttningar</th><th></th></tr></thead>
+          <thead><tr><th>Grupp</th><th class="num">Djur</th><th>Betar nu</th><th class="num">Flyttar</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>` : '<p class="empty">Inga djurgrupper ännu.</p>'}
     </div>`;
@@ -953,15 +953,15 @@ function renderStats() {
 
   el.innerHTML = `
     <div class="stats-grid">
-      <div class="stat"><div class="value">${totalMoves}</div><div class="label">Flyttningar totalt</div></div>
+      <div class="stat"><div class="value">${totalMoves}</div><div class="label">Flyttar totalt</div></div>
       <div class="stat"><div class="value">${totalInternal}</div><div class="label">Flyttar inom marken</div></div>
       <div class="stat"><div class="value">${totalPaddocks}</div><div class="label">Betesmarker</div></div>
       <div class="stat"><div class="value">${grazedPaddocks}</div><div class="label">Marker betade i år</div></div>
       <div class="stat"><div class="value">${state.herds.length}</div><div class="label">Djurgrupper</div></div>
     </div>
     <div class="card">
-      <h2>Flyttningar per månad</h2>
-      ${totalMoves ? monthChart : '<p class="empty">Inga flyttningar att visa ännu.</p>'}
+      <h2>Flyttar per månad</h2>
+      ${totalMoves ? monthChart : '<p class="empty">Inga flyttar att visa ännu.</p>'}
     </div>
     <div class="card">
       <h2>Antal beten per mark</h2>
@@ -997,7 +997,7 @@ function renderData() {
     </div>
     <div class="card">
       <h2>Radera all data</h2>
-      <p class="note">Tar bort alla betesmarker, djurgrupper och flyttningar. Kan inte ångras &ndash; exportera backup först.</p>
+      <p class="note">Tar bort alla betesmarker, djurgrupper och flyttar. Kan inte ångras &ndash; exportera backup först.</p>
       <button class="danger" data-action="wipe">Radera allt</button>
     </div>`;
   document.getElementById("import-file").addEventListener("change", e => {
@@ -1058,7 +1058,7 @@ document.addEventListener("click", e => {
     return;
   }
   if (action === "del-move") {
-    if (confirm("Ta bort denna flyttning?")) {
+    if (confirm("Ta bort denna flytt?")) {
       state.moves = state.moves.filter(m => m.id !== btn.dataset.id);
       save();
       render();
@@ -1070,7 +1070,7 @@ document.addEventListener("click", e => {
     const id = btn.dataset.id;
     const used = state.moves.some(m => m.fromPaddockId === id || m.toPaddockId === id);
     if (used) {
-      alert("Denna mark används i registrerade flyttningar. Ta bort flyttningarna först.");
+      alert("Denna mark används i registrerade flyttar. Ta bort flyttarna först.");
       return;
     }
     if (confirm("Ta bort denna betesmark?")) {
@@ -1085,7 +1085,7 @@ document.addEventListener("click", e => {
     const id = btn.dataset.id;
     const used = state.moves.some(m => m.herdId === id);
     if (used) {
-      alert("Denna djurgrupp används i registrerade flyttningar. Ta bort flyttningarna först.");
+      alert("Denna djurgrupp används i registrerade flyttar. Ta bort flyttarna först.");
       return;
     }
     if (confirm("Ta bort denna djurgrupp?")) {
@@ -1124,7 +1124,7 @@ document.addEventListener("click", e => {
     return;
   }
   if (action === "wipe") {
-    if (confirm("Radera ALL data (betesmarker, djurgrupper och flyttningar)? Detta kan inte ångras.")) {
+    if (confirm("Radera ALL data (betesmarker, djurgrupper och flyttar)? Detta kan inte ångras.")) {
       state = emptyState();
       save();
       render();
