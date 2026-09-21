@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AMP Betesflytt</title>
+<style>
+:root {
+  --green: #2e6b34;
+  --green-dark: #1f4a24;
+  --green-light: #e8f2e9;
+  --accent: #c47f17;
+  --bg: #f6f8f5;
+  --card: #ffffff;
+  --border: #d9e0d9;
+  --text: #22301f;
+  --muted: #6b7767;
+  --danger: #b23b2e;
+  --radius: 10px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+header {
+  background: var(--green);
+  color: #fff;
+  padding: 16px 20px;
+}
+header h1 { margin: 0; font-size: 1.35rem; }
+header p { margin: 2px 0 0; font-size: 0.85rem; opacity: 0.85; }
+nav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 10px 20px 0;
+  background: var(--green);
+}
+nav button {
+  border: none;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+nav button.active { background: var(--bg); color: var(--text); font-weight: 600; }
+main { max-width: 900px; margin: 0 auto; padding: 20px; }
+section { display: none; }
+section.active { display: block; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.card h2 { margin: 0 0 12px; font-size: 1.1rem; color: var(--green-dark); }
+form.inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--muted); }
+input, select, textarea {
+  font: inherit;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--green); outline-offset: 1px; }
+button.primary, button.secondary, button.danger, button.ghost {
+  font: inherit;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+button.primary { background: var(--green); color: #fff; }
+button.primary:hover { background: var(--green-dark); }
+button.secondary { background: var(--green-light); color: var(--green-dark); }
+button.danger { background: transparent; color: var(--danger); }
+button.ghost { background: transparent; color: var(--muted); padding: 4px 10px; }
+button.ghost:hover { color: var(--text); }
+button.small { padding: 4px 10px; font-size: 0.85rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+td.num { text-align: right; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat {
+  background: var(--green-light);
+  border-radius: var(--radius);
+  padding: 14px;
+  text-align: center;
+}
+.stat .value { font-size: 1.7rem; font-weight: 700; color: var(--green-dark); }
+.stat .label { font-size: 0.8rem; color: var(--muted); }
+.herd-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.herd-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--green);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.herd-card .name { font-weight: 700; font-size: 1.05rem; }
+.herd-card .now { margin: 6px 0; font-size: 0.95rem; }
+.herd-card .days { color: var(--accent); font-weight: 600; }
+.herd-card .meta { font-size: 0.8rem; color: var(--muted); }
+.badge {
+  display: inline-block;
+  background: var(--green-light);
+  color: var(--green-dark);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.arrow { color: var(--green); font-weight: 700; }
+.empty { color: var(--muted); font-style: italic; padding: 12px 0; }
+.chart-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 0.85rem; }
+.chart-label { width: 90px; text-align: right; color: var(--muted); flex-shrink: 0; }
+.chart-bar { background: var(--green); border-radius: 4px; min-width: 2px; height: 18px; }
+.chart-value { color: var(--text); }
+.hbar-wrap { display: grid; grid-template-columns: minmax(100px, 180px) 1fr 36px; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 0.88rem; }
+.hbar { background: var(--green); border-radius: 4px; min-width: 2px; height: 18px; }
+.note { color: var(--muted); font-size: 0.85rem; }
+footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20px; }
+@media (max-width: 600px) {
+  table { font-size: 0.82rem; }
+  th, td { padding: 6px 4px; }
+  .hide-sm { display: none; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🐄 AMP Betesflytt</h1>
+  <p>Registrera och följ dina djurs flyttningar mellan betesmarker</p>
+  <nav id="nav">
+    <button data-tab="overview" class="active">Översikt</button>
+    <button data-tab="moves">Flyttningar</button>
+    <button data-tab="paddocks">Betesmarker</button>
+    <button data-tab="herds">Djurgrupper</button>
+    <button data-tab="stats">Statistik</button>
+    <button data-tab="data">Data</button>
+  </nav>
+</header>
+
+<main>
+  <section id="overview" class="active"></section>
+  <section id="moves"></section>
+  <section id="paddocks"></section>
+  <section id="herds"></section>
+  <section id="stats"></section>
+  <section id="data"></section>
+</main>
+
+<footer>AMP Betesflytt &mdash; adaptiv multi-paddock-betesbruk. Data sparas lokalt i din webbläsare.</footer>
+
+<script>
+"use strict";
+
+const STORAGE_KEY = "amp-grazing-v1";
+
+function emptyState() {
+  return { paddocks: [], herds: [], moves: [] };
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.paddocks) && Array.isArray(parsed.herds) && Array.isArray(parsed.moves)) {
+        return parsed;
+      }
+    }
+  } catch (err) {}
+  return emptyState();
+}
+
+let state = load();
+
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[c]);
+}
+
+function paddockById(id) { return state.paddocks.find(p => p.id === id) || null; }
+function herdById(id) { return state.herds.find(h => h.id === id) || null; }
+function paddockName(id) { const p = paddockById(id); return p ? p.name : "–"; }
+function herdName(id) { const h = herdById(id); return h ? h.name : "–"; }
+
+function compareMove(a, b) {
+  return (a.date + "T" + (a.time || "00:00")).localeCompare(b.date + "T" + (b.time || "00:00"));
+}
+
+function movesForHerd(herdId) {
+  return state.moves.filter(m => m.herdId === herdId).sort(compareMove);
+}
+
+function currentPaddockId(herdId) {
+  const ms = movesForHerd(herdId);
+  return ms.length ? ms[ms.length - 1].toPaddockId : null;
+}
+
+function currentArrival(herdId) {
+  const ms = movesForHerd(herdId);
+  return ms.length ? ms[ms.length - 1] : null;
+}
+
+function daysBetween(startIso, endIso) {
+  const d1 = new Date(startIso + "T00:00:00");
+  const d2 = new Date(endIso + "T00:00:00");
+  return Math.round((d2 - d1) / 86400000);
+}
+
+function todayIso() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+}
+
+function nowTime() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+
+function fmtDate(iso) {
+  if (!iso) return "–";
+  return iso.slice(0, 10);
+}
+
+function arrivalsTo(paddockId) {
+  return state.moves.filter(m => m.toPaddockId === paddockId).sort(compareMove);
+}
+
+function departuresFrom(paddockId) {
+  return state.moves.filter(m => m.fromPaddockId === paddockId).sort(compareMove);
+}
+
+function grazeDaysForPaddock(paddockId) {
+  let total = 0;
+  for (const herd of state.herds) {
+    const ms = movesForHerd(herd.id);
+    let entered = null;
+    for (const m of ms) {
+      if (m.toPaddockId === paddockId) entered = m;
+      if (m.fromPaddockId === paddockId && entered) {
+        total += Math.max(0, daysBetween(entered.date, m.date));
+        entered = null;
+      }
+    }
+    if (entered) total += Math.max(0, daysBetween(entered.date, todayIso()));
+  }
+  return total;
+}
+
+function avgRestDays(paddockId) {
+  const events = [];
+  for (const m of arrivalsTo(paddockId)) events.push({ t: m.date, type: "in" });
+  for (const m of departuresFrom(paddockId)) events.push({ t: m.date, type: "out" });
+  events.sort((a, b) => a.t.localeCompare(b.t));
+  const gaps = [];
+  let lastOut = null;
+  for (const ev of events) {
+    if (ev.type === "out") lastOut = ev.t;
+    if (ev.type === "in" && lastOut) {
+      const gap = daysBetween(lastOut, ev.t);
+      if (gap > 0) gaps.push(gap);
+      lastOut = null;
+    }
+  }
+  if (!gaps.length) return null;
+  return Math.round((gaps.reduce((s, g) => s + g, 0) / gaps.length) * 10) / 10;
+}
+
+function movesPerMonth() {
+  const counts = {};
+  for (const m of state.moves) {
+    const key = m.date.slice(0, 7);
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  const months = [];
+  const now = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const pad = n => String(n).padStart(2, "0");
+    months.push({
+      key: d.getFullYear() + "-" + pad(d.getMonth() + 1),
+      label: d.toLocaleDateString("sv-SE", { month: "short", year: "2-digit" })
+    });
+  }
+  return months.map(m => ({ ...m, count: counts[m.key] || 0 }));
+}
+
+function renderOverview() {
+  const el = document.getElementById("overview");
+  if (!state.herds.length && !state.paddocks.length) {
+    el.innerHTML = `
+      <div class="card">
+        <h2>Välkommen!</h2>
+        <p>Kom igång i tre steg:</p>
+        <ol>
+          <li>Lägg till dina <strong>betesmarker</strong> under fliken Betesmarker.</li>
+          <li>Lägg till dina <strong>djurgrupper</strong> under fliken Djurgrupper.</li>
+          <li>Registrera första <strong>flyttningen</strong> när djuren släpps in på en mark (välj "– ingen –" som från-mark).</li>
+        </ol>
+        <p class="note">Allt sparas lokalt i webbläsaren. Ta gärna backup då och då under fliken Data.</p>
+      </div>`;
+    return;
+  }
+  const cards = state.herds.map(h => {
+    const curId = currentPaddockId(h.id);
+    const arr = currentArrival(h.id);
+    let nowHtml, daysHtml;
+    if (curId) {
+      const days = daysBetween(arr.date, todayIso());
+      nowHtml = `Betar nu: <strong>${esc(paddockName(curId))}</strong>`;
+      daysHtml = `Dagar där: <span class="days">${days}</span>`;
+    } else {
+      nowHtml = `<span class="empty">Ingen registrerad flyttning ännu</span>`;
+      daysHtml = "";
+    }
+    const moveCount = movesForHerd(h.id).length;
+    return `
+      <div class="herd-card">
+        <div class="name">${esc(h.name)} <span class="badge">${h.count} djur</span></div>
+        <div class="now">${nowHtml}</div>
+        <div class="now">${daysHtml}</div>
+        <div class="meta">${moveCount} flyttningar registrerade</div>
+        <div style="margin-top:10px">
+          <button class="secondary small" data-action="quick-move" data-herd="${h.id}">Registrera flyttning</button>
+        </div>
+      </div>`;
+  }).join("");
+
+  const sorted = [...state.paddocks].map(p => {
+    const arr = arrivalsTo(p.id);
+    const last = arr.length ? arr[arr.length - 1] : null;
+    return { p, count: arr.length, last };
+  }).sort((a, b) => b.count - a.count);
+
+  const padRows = sorted.map(r => `
+    <tr>
+      <td>${esc(r.p.name)}</td>
+      <td class="num">${r.p.sizeHa ?? ""}</td>
+      <td class="num">${r.count}</td>
+      <td>${r.last ? fmtDate(r.last.date) : "–"}</td>
+    </tr>`).join("");
+
+  el.innerHTML = `
+    <div class="card">
+      <h2>Dina djurgrupper just nu</h2>
+      <div class="herd-cards">${cards || '<p class="empty">Inga djurgrupper än. Lägg till under fliken Djurgrupper.</p>'}</div>
+    </div>
+    <div class="card">
+      <h2>Betesmarker i korthet</h2>
+      ${state.paddocks.length ? `
+        <table>
+          <thead><tr><th>Mark</th><th class="num">Hektar</th><th class="num">Antal beten</th><th>Senaste intag</th></tr></thead>
+          <tbody>${padRows}</tbody>
+        </table>` : '<p class="empty">Inga betesmarker än. Lägg till under fliken Betesmarker.</p>'}
+    </div>`;
+}
+
+function renderMoves() {
+  const el = document.getElementById("moves");
+  const herdOpts = state.herds.map(h => `<option value="${h.id}">${esc(h.name)}</option>`).join("");
+  const padOpts = '<option value="">– ingen –</option>' + state.paddocks.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+
+  const sorted = [...state.moves].sort((a, b) => compareMove(b, a));
+  const rows = sorted.map(m => `
+    <tr>
+      <td>${fmtDate(m.date)}${m.time ? ' <span class="note">' + esc(m.time) + '</span>' : ""}</td>
+      <td>${esc(herdName(m.herdId))}</td>
+      <td>${esc(paddockName(m.fromPaddockId))} <span class="arrow">&rarr;</span> ${esc(paddockName(m.toPaddockId))}</td>
+      <td class="hide-sm">${esc(m.note || "")}</td>
+      <td><button class="danger small" data-action="del-move" data-id="${m.id}">Ta bort</button></td>
+    </tr>`).join("");
+
+  el.innerHTML = `
+    <div class="card">
+      <h2>Registrera flyttning</h2>
+      ${state.herds.length && state.paddocks.length ? `
+        <form id="move-form" class="inline">
+          <label>Djurgrupp
+            <select name="herdId" required>
+              <option value="">Välj grupp&hellip;</option>
+              ${herdOpts}
+            </select>
+          </label>
+          <label>Flyttar från
+            <select name="from">${padOpts}</select>
+          </label>
+          <label>Flyttar till
+            <select name="to" required>
+              <option value="">Välj mark&hellip;</option>
+              ${state.paddocks.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("")}
+            </select>
+          </label>
+          <label>Datum
+            <input type="date" name="date" value="${todayIso()}" required>
+          </label>
+          <label>Tid
+            <input type="time" name="time" value="${nowTime()}">
+          </label>
+          <label>Anteckning
+            <input type="text" name="note" placeholder="Valfritt">
+          </label>
+          <button type="submit" class="primary">Spara flyttning</button>
+        </form>
+        <p class="note" id="move-msg"></p>` : `
+        <p class="empty">Du behöver minst en djurgrupp och en betesmark innan du kan registrera flyttningar.</p>
+        <button class="secondary" data-action="goto" data-tab="paddocks">Lägg till betesmark</button>
+        <button class="secondary" data-action="goto" data-tab="herds">Lägg till djurgrupp</button>`}
+    </div>
+    <div class="card">
+      <h2>Registrerade flyttningar (${state.moves.length})</h2>
+      ${state.moves.length ? `
+        <table>
+          <thead><tr><th>Datum</th><th>Grupp</th><th>Flytt</th><th class="hide-sm">Anteckning</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>` : '<p class="empty">Inga flyttningar registrerade än.</p>'}
+    </div>`;
+
+  const form = document.getElementById("move-form");
+  if (form) {
+    form.addEventListener("submit", e => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const herdId = fd.get("herdId");
+      const to = fd.get("to");
+      const from = fd.get("from") || null;
+      const date = fd.get("date");
+      const time = fd.get("time") || "";
+      const note = (fd.get("note") || "").trim();
+      const msg = document.getElementById("move-msg");
+      if (!herdId || !to) { msg.textContent = "Välj djurgrupp och till-mark."; return; }
+      if (from === to) { msg.textContent = "Från- och till-mark kan inte vara samma."; return; }
+      state.moves.push({ id: uid(), herdId, fromPaddockId: from, toPaddockId: to, date, time, note });
+      save();
+      renderMoves();
+    });
+  }
+}
+
+function renderPaddocks() {
+  const el = document.getElementById("paddocks");
+  const editing = el.dataset.editId || "";
+
+  const rows = state.paddocks.map(p => {
+    const arrivals = arrivalsTo(p.id).length;
+    const rest = avgRestDays(p.id);
+    const graze = grazeDaysForPaddock(p.id);
+    if (p.id === editing) {
+      return `
+        <tr>
+          <td colspan="6">
+            <form class="inline" data-action="save-paddock" data-id="${p.id}">
+              <label>Namn<input type="text" name="name" value="${esc(p.name)}" required></label>
+              <label>Hektar<input type="number" name="sizeHa" step="0.01" min="0" value="${p.sizeHa ?? ""}"></label>
+              <button type="submit" class="primary small">Spara</button>
+              <button type="button" class="ghost small" data-action="cancel-edit">Avbryt</button>
+            </form>
+          </td>
+        </tr>`;
+    }
+    return `
+      <tr>
+        <td>${esc(p.name)}</td>
+        <td class="num">${p.sizeHa ?? "–"}</td>
+        <td class="num">${arrivals}</td>
+        <td>${rest === null ? "–" : rest + " dagar"}</td>
+        <td class="num">${graze}</td>
+        <td>
+          <button class="ghost small" data-action="edit-paddock" data-id="${p.id}">Redigera</button>
+          <button class="danger small" data-action="del-paddock" data-id="${p.id}">Ta bort</button>
+        </td>
+      </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="card">
+      <h2>Ny betesmark</h2>
+      <form id="paddock-form" class="inline">
+        <label>Namn<input type="text" name="name" placeholder="t.ex. Västra ladan" required></label>
+        <label>Storlek (ha)<input type="number" name="sizeHa" step="0.01" min="0" placeholder="Valfritt"></label>
+        <button type="submit" class="primary">Lägg till</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Betesmarker (${state.paddocks.length})</h2>
+      ${state.paddocks.length ? `
+        <table>
+          <thead><tr><th>Mark</th><th class="num">Hektar</th><th class="num">Antal beten</th><th>Snitt vila</th><th class="num">Betade dagar</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <p class="note">Snitt vila = genomsnittlig återhämtningstid mellan betestillfällen. Betade dagar = total tid djur varit på marken.</p>` :
+        '<p class="empty">Inga betesmarker ännu.</p>'}
+    </div>`;
+
+  document.getElementById("paddock-form").addEventListener("submit", e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const name = (fd.get("name") || "").trim();
+    if (!name) return;
+    const sizeRaw = fd.get("sizeHa");
+    const sizeHa = sizeRaw === "" || sizeRaw === null ? null : Number(sizeRaw);
+    state.paddocks.push({ id: uid(), name, sizeHa });
+    save();
+    renderPaddocks();
+  });
+}
+
+function renderHerds() {
+  const el = document.getElementById("herds");
+  const editing = el.dataset.editId || "";
+
+  const rows = state.herds.map(h => {
+    const cur = currentPaddockId(h.id);
+    const count = movesForHerd(h.id).length;
+    if (h.id === editing) {
+      return `
+        <tr>
+          <td colspan="5">
+            <form class="inline" data-action="save-herd" data-id="${h.id}">
+              <label>Namn<input type="text" name="name" value="${esc(h.name)}" required></label>
+              <label>Antal djur<input type="number" name="count" min="0" value="${h.count}"></label>
+              <button type="submit" class="primary small">Spara</button>
+              <button type="button" class="ghost small" data-action="cancel-edit">Avbryt</button>
+            </form>
+          </td>
+        </tr>`;
+    }
+    return `
+      <tr>
+        <td>${esc(h.name)}</td>
+        <td class="num">${h.count}</td>
+        <td>${cur ? esc(paddockName(cur)) : "–"}</td>
+        <td class="num">${count}</td>
+        <td>
+          <button class="ghost small" data-action="edit-herd" data-id="${h.id}">Redigera</button>
+          <button class="danger small" data-action="del-herd" data-id="${h.id}">Ta bort</button>
+        </td>
+      </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="card">
+      <h2>Ny djurgrupp</h2>
+      <form id="herd-form" class="inline">
+        <label>Namn<input type="text" name="name" placeholder="t.ex. Korna, grupp A" required></label>
+        <label>Antal djur<input type="number" name="count" min="0" value="0" required></label>
+        <button type="submit" class="primary">Lägg till</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Djurgrupper (${state.herds.length})</h2>
+      ${state.herds.length ? `
+        <table>
+          <thead><tr><th>Grupp</th><th class="num">Djur</th><th>Betar nu</th><th class="num">Flyttningar</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>` : '<p class="empty">Inga djurgrupper ännu.</p>'}
+    </div>`;
+
+  document.getElementById("herd-form").addEventListener("submit", e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const name = (fd.get("name") || "").trim();
+    const count = Number(fd.get("count")) || 0;
+    if (!name) return;
+    state.herds.push({ id: uid(), name, count });
+    save();
+    renderHerds();
+  });
+}
+
+function renderStats() {
+  const el = document.getElementById("stats");
+  const totalMoves = state.moves.length;
+  const totalPaddocks = state.paddocks.length;
+  const yearPrefix = String(new Date().getFullYear());
+  const grazedPaddocks = state.paddocks.filter(p => arrivalsTo(p.id).some(m => m.date.startsWith(yearPrefix))).length;
+  const months = movesPerMonth();
+  const maxMonth = Math.max(1, ...months.map(m => m.count));
+  const monthChart = months.map(m => `
+    <div class="chart-row">
+      <div class="chart-label">${esc(m.label)}</div>
+      <div class="chart-bar" style="width:${(m.count / maxMonth) * 60}%;"></div>
+      <div class="chart-value">${m.count || ""}</div>
+    </div>`).join("");
+
+  const perPaddock = state.paddocks.map(p => ({
+    id: p.id,
+    name: p.name,
+    count: arrivalsTo(p.id).length,
+    rest: avgRestDays(p.id),
+    grazeDays: grazeDaysForPaddock(p.id)
+  })).sort((a, b) => b.count - a.count);
+  const maxCount = Math.max(1, ...perPaddock.map(p => p.count));
+
+  const padChart = perPaddock.map(p => `
+    <div class="hbar-wrap">
+      <div>${esc(p.name)}</div>
+      <div><div class="hbar" style="width:${(p.count / maxCount) * 100}%;"></div></div>
+      <div class="chart-value">${p.count}</div>
+    </div>`).join("");
+
+  const tableRows = perPaddock.map(p => `
+    <tr>
+      <td>${esc(p.name)}</td>
+      <td class="num">${p.count}</td>
+      <td>${p.rest === null ? "–" : p.rest + " dagar"}</td>
+      <td class="num">${p.grazeDays}</td>
+    </tr>`).join("");
+
+  el.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat"><div class="value">${totalMoves}</div><div class="label">Flyttningar totalt</div></div>
+      <div class="stat"><div class="value">${totalPaddocks}</div><div class="label">Betesmarker</div></div>
+      <div class="stat"><div class="value">${grazedPaddocks}</div><div class="label">Marker betade i år</div></div>
+      <div class="stat"><div class="value">${state.herds.length}</div><div class="label">Djurgrupper</div></div>
+    </div>
+    <div class="card">
+      <h2>Flyttningar per månad</h2>
+      ${totalMoves ? monthChart : '<p class="empty">Inga flyttningar att visa ännu.</p>'}
+    </div>
+    <div class="card">
+      <h2>Antal beten per mark</h2>
+      ${state.paddocks.length ? padChart : '<p class="empty">Lägg till betesmarker för att se statistik.</p>'}
+    </div>
+    <div class="card">
+      <h2>Detaljer per betesmark</h2>
+      ${state.paddocks.length ? `
+        <table>
+          <thead><tr><th>Mark</th><th class="num">Antal beten</th><th>Snitt vila</th><th class="num">Betade dagar</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>` : '<p class="empty">Inga betesmarker ännu.</p>'}
+    </div>`;
+}
+
+function renderData() {
+  const el = document.getElementById("data");
+  const count = state.paddocks.length + state.herds.length + state.moves.length;
+  el.innerHTML = `
+    <div class="card">
+      <h2>Backup och återställning</h2>
+      <p>Datan (${count} poster) sparas lokalt i denna webbläsare. Exportera en backupfil regelbundet.</p>
+      <p>
+        <button class="primary" data-action="export">Exportera backup (JSON)</button>
+      </p>
+      <p>
+        <label style="flex-direction:row; align-items:center; gap:8px;">
+          <span>Importera backup:</span>
+          <input type="file" id="import-file" accept="application/json,.json">
+        </label>
+      </p>
+      <p class="note" id="import-msg"></p>
+    </div>
+    <div class="card">
+      <h2>Radera all data</h2>
+      <p class="note">Tar bort alla betesmarker, djurgrupper och flyttningar. Kan inte ångras &ndash; exportera backup först.</p>
+      <button class="danger" data-action="wipe">Radera allt</button>
+    </div>`;
+  document.getElementById("import-file").addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const msg = document.getElementById("import-msg");
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (parsed && Array.isArray(parsed.paddocks) && Array.isArray(parsed.herds) && Array.isArray(parsed.moves)) {
+          state = parsed;
+          save();
+          msg.textContent = "Importen lyckades.";
+          render();
+        } else {
+          msg.textContent = "Filen har inte rätt format.";
+        }
+      } catch (err) {
+        msg.textContent = "Kunde inte läsa filen.";
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
+function render() {
+  renderOverview();
+  renderMoves();
+  renderPaddocks();
+  renderHerds();
+  renderStats();
+  renderData();
+}
+
+function showTab(tab) {
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  document.querySelectorAll("main section").forEach(s => s.classList.toggle("active", s.id === tab));
+}
+
+document.getElementById("nav").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-tab]");
+  if (btn) showTab(btn.dataset.tab);
+});
+
+document.addEventListener("click", e => {
+  const btn = e.target.closest("[data-action]");
+  if (!btn) return;
+  const action = btn.dataset.action;
+  if (action === "goto") {
+    showTab(btn.dataset.tab);
+    return;
+  }
+  if (action === "quick-move") {
+    showTab("moves");
+    const sel = document.querySelector('#move-form select[name="herdId"]');
+    if (sel) sel.value = btn.dataset.herd;
+    return;
+  }
+  if (action === "del-move") {
+    if (confirm("Ta bort denna flyttning?")) {
+      state.moves = state.moves.filter(m => m.id !== btn.dataset.id);
+      save();
+      render();
+      showTab("moves");
+    }
+    return;
+  }
+  if (action === "del-paddock") {
+    const id = btn.dataset.id;
+    const used = state.moves.some(m => m.fromPaddockId === id || m.toPaddockId === id);
+    if (used) {
+      alert("Denna mark används i registrerade flyttningar. Ta bort flyttningarna först.");
+      return;
+    }
+    if (confirm("Ta bort denna betesmark?")) {
+      state.paddocks = state.paddocks.filter(p => p.id !== id);
+      save();
+      render();
+      showTab("paddocks");
+    }
+    return;
+  }
+  if (action === "del-herd") {
+    const id = btn.dataset.id;
+    const used = state.moves.some(m => m.herdId === id);
+    if (used) {
+      alert("Denna djurgrupp används i registrerade flyttningar. Ta bort flyttningarna först.");
+      return;
+    }
+    if (confirm("Ta bort denna djurgrupp?")) {
+      state.herds = state.herds.filter(h => h.id !== id);
+      save();
+      render();
+      showTab("herds");
+    }
+    return;
+  }
+  if (action === "edit-paddock") {
+    document.getElementById("paddocks").dataset.editId = btn.dataset.id;
+    renderPaddocks();
+    return;
+  }
+  if (action === "cancel-edit") {
+    delete document.getElementById("paddocks").dataset.editId;
+    delete document.getElementById("herds").dataset.editId;
+    renderPaddocks();
+    renderHerds();
+    return;
+  }
+  if (action === "edit-herd") {
+    document.getElementById("herds").dataset.editId = btn.dataset.id;
+    renderHerds();
+    return;
+  }
+  if (action === "export") {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "amp-betesflytt-backup-" + todayIso() + ".json";
+    a.click();
+    URL.revokeObjectURL(url);
+    return;
+  }
+  if (action === "wipe") {
+    if (confirm("Radera ALL data (betesmarker, djurgrupper och flyttningar)? Detta kan inte ångras.")) {
+      state = emptyState();
+      save();
+      render();
+      showTab("overview");
+    }
+  }
+});
+
+document.addEventListener("submit", e => {
+  const form = e.target.closest('form[data-action]');
+  if (!form) return;
+  const action = form.dataset.action;
+  const id = form.dataset.id;
+  if (action === "save-paddock") {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const p = paddockById(id);
+    if (p) {
+      p.name = (fd.get("name") || "").trim() || p.name;
+      const sizeRaw = fd.get("sizeHa");
+      p.sizeHa = sizeRaw === "" || sizeRaw === null ? null : Number(sizeRaw);
+      save();
+    }
+    delete document.getElementById("paddocks").dataset.editId;
+    renderPaddocks();
+  }
+  if (action === "save-herd") {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const h = herdById(id);
+    if (h) {
+      h.name = (fd.get("name") || "").trim() || h.name;
+      h.count = Number(fd.get("count")) || 0;
+      save();
+    }
+    delete document.getElementById("herds").dataset.editId;
+    renderHerds();
+  }
+});
+
+render();
+</script>
+</body>
+</html>
