@@ -14,6 +14,9 @@ Appen fungerar bra på mobil och surfplatta.
 2. **Djurgrupper** – lägg till dina grupper (t.ex. "Korna, grupp A") med antal djur.
 3. **Flyttningar** – registrera varje flytt: vilken grupp, från vilken mark, till vilken mark,
    datum och tid. Vid första släppet väljs "– ingen –" som från-mark.
+   **Flytt inom samma mark:** välj samma mark i både "från" och "till" – det räknas som en
+   flytt till ett nytt område inne i marken. Fältet "Flyttad yta (ha)" anger hur stor yta
+   djuren fick (valfritt, men rekommenderas för inom-flyttar).
 
 ### Vad appen visar
 

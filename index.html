@@ -253,11 +253,15 @@ function fmtDate(iso) {
 }
 
 function arrivalsTo(paddockId) {
-  return state.moves.filter(m => m.toPaddockId === paddockId).sort(compareMove);
+  return state.moves.filter(m => m.toPaddockId === paddockId && m.fromPaddockId !== paddockId).sort(compareMove);
 }
 
 function departuresFrom(paddockId) {
-  return state.moves.filter(m => m.fromPaddockId === paddockId).sort(compareMove);
+  return state.moves.filter(m => m.fromPaddockId === paddockId && m.toPaddockId !== paddockId).sort(compareMove);
+}
+
+function internalMovesIn(paddockId) {
+  return state.moves.filter(m => m.fromPaddockId === paddockId && m.toPaddockId === paddockId).sort(compareMove);
 }
 
 function grazeDaysForPaddock(paddockId) {
@@ -266,6 +270,7 @@ function grazeDaysForPaddock(paddockId) {
     const ms = movesForHerd(herd.id);
     let entered = null;
     for (const m of ms) {
+      if (m.fromPaddockId === paddockId && m.toPaddockId === paddockId) continue;
       if (m.toPaddockId === paddockId) entered = m;
       if (m.fromPaddockId === paddockId && entered) {
         total += Math.max(0, daysBetween(entered.date, m.date));
@@ -336,20 +341,27 @@ function renderOverview() {
     const arr = currentArrival(h.id);
     let nowHtml, daysHtml;
     if (curId) {
-      const days = daysBetween(arr.date, todayIso());
-      nowHtml = `Betar nu: <strong>${esc(paddockName(curId))}</strong>`;
-      daysHtml = `Dagar där: <span class="days">${days}</span>`;
+      const entries = movesForHerd(h.id).filter(m => m.toPaddockId === curId && m.fromPaddockId !== curId);
+      const lastEntry = entries.length ? entries[entries.length - 1] : arr;
+      const daysOnMark = daysBetween(lastEntry.date, todayIso());
+      const areaBadge = arr.sizeHa != null ? ` <span class="badge">${arr.sizeHa} ha</span>` : "";
+      nowHtml = `Betar nu: <strong>${esc(paddockName(curId))}</strong>${areaBadge}`;
+      const isInternal = arr.fromPaddockId === arr.toPaddockId;
+      daysHtml = `Dagar på marken: <span class="days">${daysOnMark}</span>` +
+        (isInternal ? ` &middot; i nuvarande område: <span class="days">${daysBetween(arr.date, todayIso())}</span>` : "");
     } else {
       nowHtml = `<span class="empty">Ingen registrerad flyttning ännu</span>`;
       daysHtml = "";
     }
-    const moveCount = movesForHerd(h.id).length;
+    const allMoves = movesForHerd(h.id);
+    const internalCount = allMoves.filter(m => m.fromPaddockId === m.toPaddockId).length;
+    const moveCount = allMoves.length;
     return `
       <div class="herd-card">
         <div class="name">${esc(h.name)} <span class="badge">${h.count} djur</span></div>
         <div class="now">${nowHtml}</div>
         <div class="now">${daysHtml}</div>
-        <div class="meta">${moveCount} flyttningar registrerade</div>
+        <div class="meta">${moveCount} flyttningar registrerade${internalCount ? " (" + internalCount + " inom marken)" : ""}</div>
         <div style="margin-top:10px">
           <button class="secondary small" data-action="quick-move" data-herd="${h.id}">Registrera flyttning</button>
         </div>
@@ -359,7 +371,7 @@ function renderOverview() {
   const sorted = [...state.paddocks].map(p => {
     const arr = arrivalsTo(p.id);
     const last = arr.length ? arr[arr.length - 1] : null;
-    return { p, count: arr.length, last };
+    return { p, count: arr.length, internal: internalMovesIn(p.id).length, last };
   }).sort((a, b) => b.count - a.count);
 
   const padRows = sorted.map(r => `
@@ -367,6 +379,7 @@ function renderOverview() {
       <td>${esc(r.p.name)}</td>
       <td class="num">${r.p.sizeHa ?? ""}</td>
       <td class="num">${r.count}</td>
+      <td class="num">${r.internal}</td>
       <td>${r.last ? fmtDate(r.last.date) : "–"}</td>
     </tr>`).join("");
 
@@ -379,7 +392,7 @@ function renderOverview() {
       <h2>Betesmarker i korthet</h2>
       ${state.paddocks.length ? `
         <table>
-          <thead><tr><th>Mark</th><th class="num">Hektar</th><th class="num">Antal beten</th><th>Senaste intag</th></tr></thead>
+          <thead><tr><th>Mark</th><th class="num">Hektar</th><th class="num">Antal beten</th><th class="num">Flyttar inom</th><th>Senaste intag</th></tr></thead>
           <tbody>${padRows}</tbody>
         </table>` : '<p class="empty">Inga betesmarker än. Lägg till under fliken Betesmarker.</p>'}
     </div>`;
@@ -420,6 +433,10 @@ function renderMoves() {
               ${state.paddocks.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("")}
             </select>
           </label>
+          <label>Flyttad yta (ha)
+            <input type="number" name="sizeHa" step="0.01" min="0" placeholder="Valfritt">
+          </label>
+          <p class="note" id="move-hint"></p>
           <label>Datum
             <input type="date" name="date" value="${todayIso()}" required>
           </label>
@@ -440,13 +457,23 @@ function renderMoves() {
       <h2>Registrerade flyttningar (${state.moves.length})</h2>
       ${state.moves.length ? `
         <table>
-          <thead><tr><th>Datum</th><th>Grupp</th><th>Flytt</th><th class="hide-sm">Anteckning</th><th></th></tr></thead>
+          <thead><tr><th>Datum</th><th>Grupp</th><th>Flytt</th><th class="num">Yta</th><th class="hide-sm">Anteckning</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>` : '<p class="empty">Inga flyttningar registrerade än.</p>'}
     </div>`;
 
   const form = document.getElementById("move-form");
   if (form) {
+    const fromSel = form.elements["from"];
+    const toSel = form.elements["to"];
+    const hint = document.getElementById("move-hint");
+    const updateHint = () => {
+      hint.textContent = fromSel.value && fromSel.value === toSel.value
+        ? "Samma mark i båda fälten = flytt inom marken till ett nytt område."
+        : "";
+    };
+    fromSel.addEventListener("change", updateHint);
+    toSel.addEventListener("change", updateHint);
     form.addEventListener("submit", e => {
       e.preventDefault();
       const fd = new FormData(form);
@@ -456,10 +483,15 @@ function renderMoves() {
       const date = fd.get("date");
       const time = fd.get("time") || "";
       const note = (fd.get("note") || "").trim();
+      const sizeRaw = fd.get("sizeHa");
+      const sizeHa = sizeRaw === "" || sizeRaw === null ? null : Number(sizeRaw);
       const msg = document.getElementById("move-msg");
       if (!herdId || !to) { msg.textContent = "Välj djurgrupp och till-mark."; return; }
-      if (from === to) { msg.textContent = "Från- och till-mark kan inte vara samma."; return; }
-      state.moves.push({ id: uid(), herdId, fromPaddockId: from, toPaddockId: to, date, time, note });
+      if (from && from !== to) {
+        const cur = currentPaddockId(herdId);
+        if (cur && cur !== from && !confirm("Gruppen betar nu " + paddockName(cur) + ". Spara flytt från " + paddockName(from) + " ändå?")) return;
+      }
+      state.moves.push({ id: uid(), herdId, fromPaddockId: from, toPaddockId: to, date, time, note, sizeHa });
       save();
       renderMoves();
     });
@@ -472,12 +504,13 @@ function renderPaddocks() {
 
   const rows = state.paddocks.map(p => {
     const arrivals = arrivalsTo(p.id).length;
+    const internal = internalMovesIn(p.id).length;
     const rest = avgRestDays(p.id);
     const graze = grazeDaysForPaddock(p.id);
     if (p.id === editing) {
       return `
         <tr>
-          <td colspan="6">
+          <td colspan="7">
             <form class="inline" data-action="save-paddock" data-id="${p.id}">
               <label>Namn<input type="text" name="name" value="${esc(p.name)}" required></label>
               <label>Hektar<input type="number" name="sizeHa" step="0.01" min="0" value="${p.sizeHa ?? ""}"></label>
@@ -492,6 +525,7 @@ function renderPaddocks() {
         <td>${esc(p.name)}</td>
         <td class="num">${p.sizeHa ?? "–"}</td>
         <td class="num">${arrivals}</td>
+        <td class="num">${internal}</td>
         <td>${rest === null ? "–" : rest + " dagar"}</td>
         <td class="num">${graze}</td>
         <td>
@@ -514,7 +548,7 @@ function renderPaddocks() {
       <h2>Betesmarker (${state.paddocks.length})</h2>
       ${state.paddocks.length ? `
         <table>
-          <thead><tr><th>Mark</th><th class="num">Hektar</th><th class="num">Antal beten</th><th>Snitt vila</th><th class="num">Betade dagar</th><th></th></tr></thead>
+          <thead><tr><th>Mark</th><th class="num">Hektar</th><th class="num">Antal beten</th><th class="num">Flyttar inom</th><th>Snitt vila</th><th class="num">Betade dagar</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
         <p class="note">Snitt vila = genomsnittlig återhämtningstid mellan betestillfällen. Betade dagar = total tid djur varit på marken.</p>` :
@@ -612,14 +646,22 @@ function renderStats() {
       <div class="chart-value">${m.count || ""}</div>
     </div>`).join("");
 
-  const perPaddock = state.paddocks.map(p => ({
-    id: p.id,
-    name: p.name,
-    count: arrivalsTo(p.id).length,
-    rest: avgRestDays(p.id),
-    grazeDays: grazeDaysForPaddock(p.id)
-  })).sort((a, b) => b.count - a.count);
+  const perPaddock = state.paddocks.map(p => {
+    const internal = internalMovesIn(p.id);
+    const sizes = internal.filter(m => m.sizeHa != null).map(m => m.sizeHa);
+    const avgSize = sizes.length ? Math.round((sizes.reduce((s, v) => s + v, 0) / sizes.length) * 100) / 100 : null;
+    return {
+      id: p.id,
+      name: p.name,
+      count: arrivalsTo(p.id).length,
+      internalCount: internal.length,
+      avgSize,
+      rest: avgRestDays(p.id),
+      grazeDays: grazeDaysForPaddock(p.id)
+    };
+  }).sort((a, b) => b.count - a.count);
   const maxCount = Math.max(1, ...perPaddock.map(p => p.count));
+  const totalInternal = state.moves.filter(m => m.fromPaddockId === m.toPaddockId).length;
 
   const padChart = perPaddock.map(p => `
     <div class="hbar-wrap">
@@ -632,6 +674,8 @@ function renderStats() {
     <tr>
       <td>${esc(p.name)}</td>
       <td class="num">${p.count}</td>
+      <td class="num">${p.internalCount}</td>
+      <td class="num">${p.avgSize === null ? "–" : p.avgSize}</td>
       <td>${p.rest === null ? "–" : p.rest + " dagar"}</td>
       <td class="num">${p.grazeDays}</td>
     </tr>`).join("");
@@ -639,6 +683,7 @@ function renderStats() {
   el.innerHTML = `
     <div class="stats-grid">
       <div class="stat"><div class="value">${totalMoves}</div><div class="label">Flyttningar totalt</div></div>
+      <div class="stat"><div class="value">${totalInternal}</div><div class="label">Flyttar inom marken</div></div>
       <div class="stat"><div class="value">${totalPaddocks}</div><div class="label">Betesmarker</div></div>
       <div class="stat"><div class="value">${grazedPaddocks}</div><div class="label">Marker betade i år</div></div>
       <div class="stat"><div class="value">${state.herds.length}</div><div class="label">Djurgrupper</div></div>
@@ -655,7 +700,7 @@ function renderStats() {
       <h2>Detaljer per betesmark</h2>
       ${state.paddocks.length ? `
         <table>
-          <thead><tr><th>Mark</th><th class="num">Antal beten</th><th>Snitt vila</th><th class="num">Betade dagar</th></tr></thead>
+          <thead><tr><th>Mark</th><th class="num">Antal beten</th><th class="num">Flyttar inom</th><th class="num">Snitt yta (ha)</th><th>Snitt vila</th><th class="num">Betade dagar</th></tr></thead>
           <tbody>${tableRows}</tbody>
         </table>` : '<p class="empty">Inga betesmarker ännu.</p>'}
     </div>`;
