@@ -303,22 +303,26 @@ async function persistUserState() {
   }
 }
 
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(label || "timeout")), ms))
+  ]);
+}
+
 async function diagnoseFirestore() {
   const el = document.getElementById("auth-debug");
+  if (!el) return;
   try {
-    await setDoc(doc(db, "farms", "diagnostic-test"), { test: true }, { merge: true });
-    el.textContent = "Diagnos: Firestore är skrivbar. Testdokumentet raderas automatiskt.";
-    try {
-      await setDoc(doc(db, "farms", "diagnostic-test"), { test: true }, { merge: false });
-    } catch (err) {
-      if ((err && err.code) === "permission-denied") {
-        el.textContent = "Diagnos: Firestore svarar, men reglerna tillåter inte testet. Det är normalt om du är inloggad. Huvudproblemet är troligen något annat.";
-      }
-    }
+    await withTimeout(setDoc(doc(db, "farms", "diagnostic-test"), { test: true }, { merge: true }), 10000);
+    el.textContent = "Diagnos: Firestore är nåbart och svarar.";
   } catch (err) {
-    const code = (err && err.code) || (err && err.message) || "okänt fel";
-    el.textContent = "Diagnos: Firestore nårdes men vägrade skriva. Felkod: " + code +
-      (code === "permission-denied" ? " – reglerna måste publiceras (se README)." : "");
+    const code = (err && err.code) || String((err && err.message) || "okänt fel");
+    if (code === "permission-denied") {
+      el.textContent = "Diagnos: Firestore är nåbart – anslutningen fungerar.";
+    } else {
+      el.textContent = "Diagnos: Firestore går inte att nå (" + code + ") – kontrollera att en (default)-databas är skapad i projektet amp-grazing.";
+    }
   }
 }
 
@@ -430,10 +434,14 @@ async function start() {
       showApp(user);
       setSaveStatus("Hämtar din data…", false);
       try {
-        const loaded = await Promise.race([
-          loadUserState(user.uid),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 12000))
-        ]);
+        let loaded;
+        try {
+          loaded = await withTimeout(loadUserState(user.uid), 25000);
+        } catch (first) {
+          console.error("Första försöket misslyckades, försöker igen", first);
+          await new Promise(r => setTimeout(r, 3000));
+          loaded = await withTimeout(loadUserState(user.uid), 25000);
+        }
         state = loaded;
         render();
         setSaveStatus("Sparat i molnet ✓", false);
@@ -443,8 +451,8 @@ async function start() {
         let text;
         if (code === "permission-denied") {
           text = "Åtkomst nekad av Firestore-reglerna – publicera regeln (se README) under Firestore → Rules.";
-        } else if (code === "timeout") {
-          text = "Molnet svarade inte (timeout) – kontrollera att Firestore Database är skapad i projektet amp-grazing.";
+        } else if (code === "timeout" || String(code).includes("timeout")) {
+          text = "Molnet svarade inte (timeout efter två försök). Kontrollera att (default)-databasen finns i projektet amp-grazing – eller prova igen om några minuter om databasen skapats nyss.";
         } else if (code === "unavailable" || code === "failed-precondition") {
           text = "Firestore gick inte att nå (" + code + ") – kontrollera nätverk och att databasen finns i projektet amp-grazing.";
         } else {
