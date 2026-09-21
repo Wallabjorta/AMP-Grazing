@@ -616,14 +616,19 @@ function renderOverview() {
     const arr = currentArrival(h.id);
     let nowHtml, daysHtml;
     if (curId) {
-      const entries = movesForHerd(h.id).filter(m => m.toPaddockId === curId && m.fromPaddockId !== curId);
-      const lastEntry = entries.length ? entries[entries.length - 1] : arr;
-      const daysOnMark = daysBetween(lastEntry.date, todayIso());
+      const allMoves = movesForHerd(h.id);
+      const visits = [];
+      for (const m of allMoves) {
+        if (m.toPaddockId === curId && m.fromPaddockId !== curId) visits.push({ start: m.date, end: null });
+        if (visits.length && m.fromPaddockId === curId && m.toPaddockId !== curId) visits[visits.length - 1].end = m.date;
+      }
+      const visit = visits.length ? visits[visits.length - 1] : null;
+      const firstOnMark = visit ? visit.start : allMoves.find(m => m.toPaddockId === curId).date;
+      const daysOnMark = daysBetween(firstOnMark, todayIso());
       const areaBadge = arr.sizeHa != null ? ` <span class="badge">${formatArea(arr.sizeHa)}</span>` : "";
       nowHtml = `Betar nu: <strong>${esc(paddockName(curId))}</strong>${areaBadge}`;
-      const isInternal = arr.fromPaddockId === arr.toPaddockId;
       daysHtml = `Dagar på marken: <span class="days">${daysOnMark}</span>` +
-        (isInternal ? ` &middot; i nuvarande område: <span class="days">${daysBetween(arr.date, todayIso())}</span>` : "");
+        ` &middot; i nuvarande område: <span class="days">${daysBetween(arr.date, todayIso())}</span>`;
     } else {
       nowHtml = `<span class="empty">Ingen registrerad flytt ännu</span>`;
       daysHtml = "";
