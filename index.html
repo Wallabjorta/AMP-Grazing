@@ -615,7 +615,7 @@ function renderOverview() {
       const entries = movesForHerd(h.id).filter(m => m.toPaddockId === curId && m.fromPaddockId !== curId);
       const lastEntry = entries.length ? entries[entries.length - 1] : arr;
       const daysOnMark = daysBetween(lastEntry.date, todayIso());
-      const areaBadge = arr.sizeHa != null ? ` <span class="badge">${arr.sizeHa} ha</span>` : "";
+      const areaBadge = arr.sizeHa != null ? ` <span class="badge">${formatArea(arr.sizeHa)}</span>` : "";
       nowHtml = `Betar nu: <strong>${esc(paddockName(curId))}</strong>${areaBadge}`;
       const isInternal = arr.fromPaddockId === arr.toPaddockId;
       daysHtml = `Dagar på marken: <span class="days">${daysOnMark}</span>` +
@@ -669,6 +669,18 @@ function renderOverview() {
     </div>`;
 }
 
+function parseArea(raw) {
+  if (raw === "" || raw === null || raw === undefined) return null;
+  const cleaned = String(raw).trim().replace(",", ".").replace(/\s/g, "");
+  const n = Number(cleaned);
+  return cleaned !== "" && !isNaN(n) && n >= 0 ? n : null;
+}
+
+function formatArea(n) {
+  if (n == null) return "–";
+  return String(n).replace(".", ",") + " ha";
+}
+
 function renderMoves() {
   const el = document.getElementById("moves");
   const herdOpts = state.herds.map(h => `<option value="${h.id}">${esc(h.name)}</option>`).join("");
@@ -680,6 +692,7 @@ function renderMoves() {
       <td>${fmtDate(m.date)}${m.time ? ' <span class="note">' + esc(m.time) + '</span>' : ""}</td>
       <td>${esc(herdName(m.herdId))}</td>
       <td>${esc(paddockName(m.fromPaddockId))} <span class="arrow">&rarr;</span> ${esc(paddockName(m.toPaddockId))}</td>
+      <td class="num">${formatArea(m.sizeHa)}</td>
       <td class="hide-sm">${esc(m.note || "")}</td>
       <td><button class="danger small" data-action="del-move" data-id="${m.id}">Ta bort</button></td>
     </tr>`).join("");
@@ -705,7 +718,7 @@ function renderMoves() {
             </select>
           </label>
           <label>Flyttad yta (ha)
-            <input type="number" name="sizeHa" step="0.01" min="0" placeholder="Valfritt">
+            <input type="text" name="sizeHa" inputmode="decimal" placeholder="t.ex. 0,1">
           </label>
           <p class="note" id="move-hint"></p>
           <label>Datum
@@ -754,8 +767,7 @@ function renderMoves() {
       const date = fd.get("date");
       const time = fd.get("time") || "";
       const note = (fd.get("note") || "").trim();
-      const sizeRaw = fd.get("sizeHa");
-      const sizeHa = sizeRaw === "" || sizeRaw === null ? null : Number(sizeRaw);
+      const sizeHa = parseArea(fd.get("sizeHa"));
       const msg = document.getElementById("move-msg");
       if (!herdId || !to) { msg.textContent = "Välj djurgrupp och till-mark."; return; }
       if (from && from !== to) {
