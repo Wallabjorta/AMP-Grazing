@@ -6,7 +6,8 @@
       "**/.*",
       "**/node_modules/**",
       "README.md",
-      "test.js"
+      "test.js",
+      "firestore.rules"
     ],
     "rewrites": [
       {
@@ -14,5 +15,8 @@
         "destination": "/index.html"
       }
     ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
   }
 }

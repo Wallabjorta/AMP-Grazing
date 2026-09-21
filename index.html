@@ -194,6 +194,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
     <button id="register-btn" class="secondary" style="width:100%;margin-top:10px">Skapa nytt gårdskonto</button>
     <p class="note" id="auth-msg"></p>
     <p class="note">Varje konto är en egen gård – din data hålls separat från andras.</p>
+    <p class="note" id="auth-debug"></p>
   </div>
 </div>
 
@@ -302,6 +303,25 @@ async function persistUserState() {
   }
 }
 
+async function diagnoseFirestore() {
+  const el = document.getElementById("auth-debug");
+  try {
+    await setDoc(doc(db, "farms", "diagnostic-test"), { test: true }, { merge: true });
+    el.textContent = "Diagnos: Firestore är skrivbar. Testdokumentet raderas automatiskt.";
+    try {
+      await setDoc(doc(db, "farms", "diagnostic-test"), { test: true }, { merge: false });
+    } catch (err) {
+      if ((err && err.code) === "permission-denied") {
+        el.textContent = "Diagnos: Firestore svarar, men reglerna tillåter inte testet. Det är normalt om du är inloggad. Huvudproblemet är troligen något annat.";
+      }
+    }
+  } catch (err) {
+    const code = (err && err.code) || (err && err.message) || "okänt fel";
+    el.textContent = "Diagnos: Firestore nårdes men vägrade skriva. Felkod: " + code +
+      (code === "permission-denied" ? " – reglerna måste publiceras (se README)." : "");
+  }
+}
+
 async function loadUserState(uid) {
   const snap = await getDoc(doc(db, "farms", uid));
   if (snap.exists()) {
@@ -403,6 +423,7 @@ async function start() {
     return;
   }
   setupAuthUI();
+  diagnoseFirestore();
   onAuthStateChanged(auth, async user => {
     if (user) {
       currentUser = user;
