@@ -405,15 +405,20 @@ async function start() {
   onAuthStateChanged(auth, async user => {
     if (user) {
       currentUser = user;
+      showApp(user);
+      setSaveStatus("Hämtar din data…", false);
       try {
-        state = await loadUserState(user.uid);
+        const loaded = await Promise.race([
+          loadUserState(user.uid),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 12000))
+        ]);
+        state = loaded;
+        render();
         setSaveStatus("Sparat i molnet ✓", false);
       } catch (err) {
         console.error("Kunde inte läsa data", err);
-        state = emptyState();
-        setSaveStatus("Kunde inte läsa data från molnet – kontrollera Firestore-reglerna", true);
+        setSaveStatus("Kunde inte nå molnet – visar lokal data. Kontrollera Firestore-regler/database.", true);
       }
-      showApp(user);
     } else {
       currentUser = null;
       showAuth();
