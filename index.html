@@ -337,19 +337,31 @@ function authErrorText(err) {
 function setupAuthUI() {
   const form = document.getElementById("login-form");
   const msg = document.getElementById("auth-msg");
+  const readCredentials = () => {
+    const fd = new FormData(form);
+    const email = (fd.get("email") || "").trim();
+    const password = fd.get("password") || "";
+    if (!email) { msg.textContent = "Fyll i din e-postadress."; return null; }
+    if (!password) { msg.textContent = "Fyll i ditt lösenord."; return null; }
+    if (password.length < 6) { msg.textContent = "Lösenordet måste vara minst 6 tecken."; return null; }
+    msg.textContent = "";
+    return { email, password };
+  };
   form.addEventListener("submit", async e => {
     e.preventDefault();
-    const fd = new FormData(form);
+    const creds = readCredentials();
+    if (!creds) return;
     try {
-      await signInWithEmailAndPassword(auth, fd.get("email"), fd.get("password"));
+      await signInWithEmailAndPassword(auth, creds.email, creds.password);
     } catch (err) {
       msg.textContent = authErrorText(err);
     }
   });
   document.getElementById("register-btn").addEventListener("click", async () => {
-    const fd = new FormData(form);
+    const creds = readCredentials();
+    if (!creds) return;
     try {
-      await createUserWithEmailAndPassword(auth, fd.get("email"), fd.get("password"));
+      await createUserWithEmailAndPassword(auth, creds.email, creds.password);
     } catch (err) {
       msg.textContent = authErrorText(err);
     }
