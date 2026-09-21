@@ -157,6 +157,8 @@ td.num { text-align: right; }
   color: var(--muted);
   font-size: 0.85rem;
 }
+.save-status { font-size: 0.8rem; }
+.save-error { color: var(--danger); font-weight: 600; }
 .chart-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 0.85rem; }
 .chart-label { width: 90px; text-align: right; color: var(--muted); flex-shrink: 0; }
 .chart-bar { background: var(--green); border-radius: 4px; min-width: 2px; height: 18px; }
@@ -207,6 +209,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
   </nav>
 </header>
 <div id="user-bar" class="user-bar" hidden>
+  <span id="save-status" class="save-status"></span>
   <span id="user-email"></span>
   <button id="logout-btn" class="ghost small">Logga ut</button>
 </div>
@@ -273,16 +276,27 @@ function save() {
   }
 }
 
+function setSaveStatus(text, isError) {
+  const el = document.getElementById("save-status");
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle("save-error", !!isError);
+}
+
 async function persistUserState() {
   if (!currentUser) return;
+  setSaveStatus("Sparar…", false);
   try {
     await setDoc(doc(db, "farms", currentUser.uid), {
       paddocks: state.paddocks,
       herds: state.herds,
       moves: state.moves
     });
+    setSaveStatus("Sparat i molnet ✓", false);
   } catch (err) {
     console.error("Kunde inte spara till Firebase", err);
+    const denied = err && (err.code === "permission-denied" || String(err).includes("permission"));
+    setSaveStatus(denied ? "Kunde inte spara: åtkomst nekad – kontrollera Firestore-reglerna" : "Kunde inte spara till molnet", true);
   }
 }
 
@@ -381,9 +395,11 @@ async function start() {
       currentUser = user;
       try {
         state = await loadUserState(user.uid);
+        setSaveStatus("Sparat i molnet ✓", false);
       } catch (err) {
         console.error("Kunde inte läsa data", err);
         state = emptyState();
+        setSaveStatus("Kunde inte läsa data från molnet – kontrollera Firestore-reglerna", true);
       }
       showApp(user);
     } else {
