@@ -354,7 +354,7 @@ function showApp(user) {
     footer.textContent = "AMP Betesflytt — inloggad som " + (user.email || "") + ". Din gårds data synkas till Firebase.";
   } else {
     userBar.hidden = true;
-    footer.textContent = "AMP Betesflytt — datan sparas lokalt i webbläsaren tills Firebase är konfigurerat (se README).";
+    footer.textContent = "AMP Betesflytt — datan sparas lokalt i webbläsaren.";
   }
   render();
 }
@@ -607,7 +607,7 @@ function renderOverview() {
           <li>Lägg till dina <strong>djurgrupper</strong> under fliken Djurgrupper.</li>
           <li>Registrera första <strong>flytten</strong> när djuren släpps in på en mark (välj "– ingen –" som från-mark).</li>
         </ol>
-        <p class="note">Allt sparas lokalt i webbläsaren. Ta gärna backup då och då under fliken Data.</p>
+        <p class="note">Din data synkas automatiskt till molnet och följer ditt konto – samma data på alla enheter.</p>
       </div>`;
     return;
   }
@@ -999,7 +999,7 @@ function renderData() {
   el.innerHTML = `
     <div class="card">
       <h2>Backup och återställning</h2>
-      <p>Datan (${count} poster) sparas lokalt i denna webbläsare. Exportera en backupfil regelbundet.</p>
+      <p>Din data (${count} poster) sparas automatiskt i molnet och är kopplad till ditt konto — samma data på mobil, surfplatta och dator. Exportera en säkerhetskopia regelbundet.</p>
       <p>
         <button class="primary" data-action="export">Exportera backup (JSON)</button>
       </p>
