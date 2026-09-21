@@ -38,3 +38,34 @@ node test.js
 ```
 
 Kör logiktester (sortering, dagsberäkningar, statistikfunktioner) mot appens kärnfunktioner.
+
+## Deploy till Firebase Hosting
+
+Appen är statisk och kan hostas direkt med Firebase Hosting.
+
+### Snabbt från egen dator
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase deploy
+```
+
+`firebase.json` i repot pekar ut rotkatalogen som public directory. URL:en du får
+(typ `https://ditt-projekt.web.app`) uppdateras vid varje `firebase deploy`.
+
+### Automatisk deploy via GitHub Actions
+
+Workflowen `.github/workflows/firebase-deploy.yml` deployar till Firebase Hosting vid
+varje push till `main`. Konfigurera en gång:
+
+1. Skapa ett Firebase-projekt och en Hosting-site på <https://console.firebase.google.com>.
+2. Kör lokalt `firebase login:ci` och kopiera den resulterande token (behövs bara för att
+   skapa servicekontot). Enklare: i Firebase-konsolen under Projektinställningar ->
+   Service accounts -> "Generate new private key" fås en JSON-nyckel.
+3. Lägg till följande secrets i GitHub (Settings -> Secrets and variables -> Actions):
+   - `FIREBASE_SERVICE_ACCOUNT` – hela JSON-innehållet från privata nyckeln
+   - `FIREBASE_PROJECT_ID` – ditt Firebase-projekt-id
+4. Pusha till `main` – workflowen deployar och appen live-uppdateras.
+
+Data sparas per webbläsare (localStorage) – se fliken Data i appen för backup/export.
