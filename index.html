@@ -316,12 +316,32 @@ function setSaveStatus(text, isError) {
   el.classList.toggle("save-error", !!isError);
 }
 
+function paddocksForCloud(paddocks) {
+  return paddocks.map(p => {
+    const copy = { ...p };
+    if (copy.boundary) {
+      copy.boundary = copy.boundary.map(pt => ({ lat: pt[0], lng: pt[1] }));
+    }
+    return copy;
+  });
+}
+
+function normalizePaddocks(paddocks) {
+  return paddocks.map(p => {
+    const copy = { ...p };
+    if (Array.isArray(copy.boundary) && copy.boundary.length && typeof copy.boundary[0] === "object" && copy.boundary[0] !== null && "lat" in copy.boundary[0]) {
+      copy.boundary = copy.boundary.map(o => [o.lat, o.lng]);
+    }
+    return copy;
+  });
+}
+
 async function persistUserState() {
   if (!currentUser) return;
   setSaveStatus("Sparar…", false);
   try {
     await setDoc(doc(db, "farms", currentUser.uid), {
-      paddocks: state.paddocks,
+      paddocks: paddocksForCloud(state.paddocks),
       herds: state.herds,
       moves: state.moves
     });
@@ -361,6 +381,7 @@ async function loadUserState(uid) {
   if (snap.exists()) {
     const data = snap.data();
     if (Array.isArray(data.paddocks) && Array.isArray(data.herds) && Array.isArray(data.moves)) {
+      data.paddocks = normalizePaddocks(data.paddocks);
       return data;
     }
   }
