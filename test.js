@@ -53,6 +53,7 @@ console.assert(currentPaddockId("h1") === "a", "current paddock should be a");
 console.assert(daysBetween("2024-05-01","2024-05-04") === 3, "daysBetween should be 3");
 console.assert(grazeDaysForPaddock("b") === 16, "grazeDays B should be 16");
 console.assert(avgRestDays("a") === 16, "avgRest A should be 16 days (left 05-04, re-entered 05-20)");
+console.assert(avgRestDays("b") !== null, "avgRest B should count ongoing rest after leaving");
 console.assert(arrivalsTo("a").length === 2, "arrivals to A should be 2 (internal moves excluded)");
 console.assert(internalMovesIn("a").length === 2, "internal moves in A should be 2");
 console.assert(internalMovesIn("b").length === 0, "internal moves in B should be 0");

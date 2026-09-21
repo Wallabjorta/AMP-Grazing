@@ -568,6 +568,10 @@ function avgRestDays(paddockId) {
       lastOut = null;
     }
   }
+  if (lastOut) {
+    const ongoing = daysBetween(lastOut, todayIso());
+    if (ongoing > 0) gaps.push(ongoing);
+  }
   if (!gaps.length) return null;
   return Math.round((gaps.reduce((s, g) => s + g, 0) / gaps.length) * 10) / 10;
 }
@@ -776,7 +780,7 @@ function renderMoves() {
       }
       state.moves.push({ id: uid(), herdId, fromPaddockId: from, toPaddockId: to, date, time, note, sizeHa });
       save();
-      renderMoves();
+      render();
     });
   }
 }
