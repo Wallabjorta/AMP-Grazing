@@ -188,6 +188,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
         <input type="password" name="password" autocomplete="current-password" minlength="6" required>
       </label>
       <button type="submit" class="primary" style="width:100%">Logga in</button>
+      <button type="button" id="reset-btn" class="ghost small">Glömt lösenordet?</button>
     </form>
     <button id="register-btn" class="secondary" style="width:100%;margin-top:10px">Skapa nytt gårdskonto</button>
     <p class="note" id="auth-msg"></p>
@@ -228,7 +229,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -381,6 +382,17 @@ function setupAuthUI() {
     }
   });
   document.getElementById("logout-btn").addEventListener("click", () => signOut(auth));
+  document.getElementById("reset-btn").addEventListener("click", async () => {
+    const fd = new FormData(form);
+    const email = (fd.get("email") || "").trim();
+    if (!email) { msg.textContent = "Fyll i din e-postadress för att få ett återställningsmail."; return; }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      msg.textContent = "Återställningsmail skickat till " + email + " – kolla din inkorg (och skräppost).";
+    } catch (err) {
+      msg.textContent = authErrorText(err);
+    }
+  });
 }
 
 async function start() {
