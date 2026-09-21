@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AMP Betesflytt</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root {
   --green: #2e6b34;
@@ -167,6 +169,7 @@ td.num { text-align: center; }
 .hbar-wrap { display: grid; grid-template-columns: minmax(100px, 180px) 1fr 36px; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 0.88rem; }
 .hbar { background: var(--green); border-radius: 4px; min-width: 2px; height: 18px; }
 .note { color: var(--muted); font-size: 0.85rem; }
+#map-canvas { height: 65vh; min-height: 400px; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 12px; }
 footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20px; }
 @media (max-width: 600px) {
   table { font-size: 0.82rem; }
@@ -208,6 +211,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
     <button data-tab="paddocks">Betesmarker</button>
     <button data-tab="herds">Djurgrupper</button>
     <button data-tab="stats">Statistik</button>
+    <button data-tab="map">Karta</button>
     <button data-tab="data">Data</button>
   </nav>
 </header>
@@ -223,6 +227,25 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
   <section id="paddocks"></section>
   <section id="herds"></section>
   <section id="stats"></section>
+  <section id="map">
+    <div class="card">
+      <h2>Karta över betesmarker</h2>
+      <form class="inline" onsubmit="return false">
+        <label>Mark
+          <select id="map-paddock"><option value="">Välj mark…</option></select>
+        </label>
+        <button type="button" id="draw-btn" class="secondary">Rita gräns</button>
+        <button type="button" id="draw-save" class="primary" hidden>Spara gräns</button>
+        <button type="button" id="draw-cancel" class="ghost" hidden>Avbryt</button>
+        <label>Importera GPX
+          <input type="file" id="gpx-file" accept=".gpx,application/gpx+xml">
+        </label>
+      </form>
+      <p class="note" id="map-msg"></p>
+      <div id="map-canvas"></div>
+      <p class="note">Importera ett GPX-spår (t.ex. om du gått eller ridit runt markens område med GPS på) så ritas gränsen automatiskt och markens hektar räknas ut. Har filen flera spår tilldelas de olika marker som saknar gräns. Du kan också rita gränsen själv: välj mark, tryck Rita gräns och klicka ut hörnen på kartan.</p>
+    </div>
+  </section>
   <section id="data"></section>
 </main>
 
@@ -418,6 +441,203 @@ function setupAuthUI() {
       msg.textContent = authErrorText(err);
     }
   });
+}
+
+let mapInstance = null;
+let mapLayers = null;
+let drawMode = false;
+let drawPoints = [];
+
+function initMap() {
+  const canvas = document.getElementById("map-canvas");
+  if (!canvas || mapInstance) return;
+  mapInstance = L.map(canvas).setView([62.0, 15.0], 5);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(mapInstance);
+  mapLayers = L.layerGroup().addTo(mapInstance);
+  document.getElementById("draw-btn").addEventListener("click", () => {
+    const sel = document.getElementById("map-paddock");
+    if (!sel.value) { document.getElementById("map-msg").textContent = "V\u00e4lj en mark f\u00f6rst."; return; }
+    drawMode = true;
+    drawPoints = [];
+    document.getElementById("draw-btn").hidden = true;
+    document.getElementById("draw-save").hidden = false;
+    document.getElementById("draw-cancel").hidden = false;
+    document.getElementById("map-msg").textContent = "Klicka ut markens h\u00f6rn p\u00e5 kartan. Dubbelklicka eller tryck Spara gr\u00e4ns n\u00e4r du \u00e4r klar.";
+    mapInstance.on("click", e => {
+      if (!drawMode) return;
+      drawPoints.push([e.latlng.lat, e.latlng.lng]);
+      renderDrawPreview();
+    });
+  });
+  document.getElementById("draw-cancel").addEventListener("click", () => {
+    drawMode = false;
+    drawPoints = [];
+    updateDrawUI(false);
+    renderMap();
+  });
+  document.getElementById("draw-save").addEventListener("click", () => {
+    const id = document.getElementById("map-paddock").value;
+    if (!id || drawPoints.length < 3) {
+      document.getElementById("map-msg").textContent = "Du beh\u00f6ver minst tre h\u00f6rn f\u00f6r att spara en gr\u00e4ns.";
+      return;
+    }
+    const p = paddockById(id);
+    p.boundary = drawPoints.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6]);
+    if (p.sizeHa == null) p.sizeHa = polygonAreaHa(p.boundary);
+    save();
+    drawMode = false;
+    drawPoints = [];
+    updateDrawUI(false);
+    document.getElementById("map-msg").textContent = "Gr\u00e4ns sparad f\u00f6r " + p.name + (p.sizeHa != null ? " (" + p.sizeHa + " ha)" : "") + ".";
+    render();
+  });
+  document.getElementById("gpx-file").addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => importGpx(reader.result);
+    reader.readAsText(file);
+    e.target.value = "";
+  });
+  updateMapPaddockSelect();
+  renderMap();
+}
+
+function updateDrawUI(active) {
+  document.getElementById("draw-btn").hidden = active;
+  document.getElementById("draw-save").hidden = !active;
+  document.getElementById("draw-cancel").hidden = !active;
+}
+
+function updateMapPaddockSelect() {
+  const sel = document.getElementById("map-paddock");
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">V\u00e4lj mark\u2026</option>' +
+    state.paddocks.map(p => '<option value="' + p.id + '">' + esc(p.name) + (p.boundary ? " \u2713" : "") + '</option>').join("");
+  if (prev && state.paddocks.some(p => p.id === prev)) sel.value = prev;
+}
+
+function polygonAreaHa(points) {
+  if (points.length < 3) return 0;
+  let total = 0;
+  for (let i = 0; i < points.length; i++) {
+    const [lat1, lng1] = points[i];
+    const [lat2, lng2] = points[(i + 1) % points.length];
+    total += (lng1 * lat2 - lng2 * lat1);
+  }
+  const areaDeg = Math.abs(total) / 2;
+  const latAvg = points.reduce((s, p) => s + p[0], 0) / points.length;
+  const mPerDegLat = 111320;
+  const mPerDegLng = 111320 * Math.cos(latAvg * Math.PI / 180);
+  return Math.round(areaDeg * mPerDegLat * mPerDegLng / 10000 * 100) / 100;
+}
+
+function paddockCenter(boundary) {
+  const lat = boundary.reduce((s, p) => s + p[0], 0) / boundary.length;
+  const lng = boundary.reduce((s, p) => s + p[1], 0) / boundary.length;
+  return [lat, lng];
+}
+
+function renderDrawPreview() {
+  mapLayers.clearLayers();
+  for (const p of state.paddocks) {
+    if (p.boundary) {
+      L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15 })
+        .bindPopup("<strong>" + esc(p.name) + "</strong>" + (p.sizeHa != null ? "<br>" + p.sizeHa + " ha" : ""))
+        .addTo(mapLayers);
+    }
+  }
+  if (drawPoints.length) {
+    L.polygon(drawPoints, { color: "#c47f17", weight: 2, dashArray: "6 4", fillOpacity: 0.1 }).addTo(mapLayers);
+    drawPoints.forEach((pt, i) => L.circleMarker(pt, { radius: 6, color: "#c47f17", fillOpacity: 1 }).addTo(mapLayers));
+  }
+}
+
+function renderMap() {
+  if (!mapInstance) return;
+  updateMapPaddockSelect();
+  mapLayers.clearLayers();
+  const bounds = [];
+  for (const p of state.paddocks) {
+    if (!p.boundary) continue;
+    const poly = L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15 })
+      .bindPopup("<strong>" + esc(p.name) + "</strong>" + (p.sizeHa != null ? "<br>" + p.sizeHa + " ha" : ""));
+    poly.addTo(mapLayers);
+    bounds.push(p.boundary);
+  }
+  for (const h of state.herds) {
+    const ms = movesForHerd(h.id);
+    const centers = ms.map(m => {
+      const p = paddockById(m.toPaddockId);
+      return p && p.boundary ? { center: paddockCenter(p.boundary), m } : null;
+    }).filter(Boolean);
+    for (let i = 0; i < centers.length - 1; i++) {
+      L.polyline([centers[i].center, centers[i + 1].center], { color: "#c47f17", weight: 2, dashArray: "6 6" })
+        .bindPopup(esc(h.name) + ": " + fmtDate(centers[i + 1].m.date))
+        .addTo(mapLayers);
+    }
+    if (centers.length) {
+      const last = centers[centers.length - 1];
+      L.circleMarker(last.center, { radius: 8, color: "#2e6b34", fillColor: "#2e6b34", fillOpacity: 1 })
+        .bindPopup("<strong>" + esc(h.name) + "</strong><br>Betar nu: " + esc(paddockName(last.m.toPaddockId)))
+        .addTo(mapLayers);
+    }
+  }
+  if (bounds.length) {
+    mapInstance.fitBounds(bounds.flat(), { padding: [30, 30] });
+  }
+  if (!drawMode) {
+  const withBoundary = state.paddocks.filter(p => p.boundary).length;
+  document.getElementById("map-msg").textContent = withBoundary
+    ? withBoundary + " av " + state.paddocks.length + " marker har gr\u00e4nser p\u00e5 kartan."
+    : "";
+  }
+}
+
+function importGpx(text) {
+  const msg = document.getElementById("map-msg");
+  try {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(text, "application/xml");
+    if (xml.querySelector("parsererror")) throw new Error("ogiltig XML");
+    const tracks = [...xml.getElementsByTagName("trk")];
+    const routes = [...xml.getElementsByTagName("rte")];
+    const groups = tracks.length ? tracks : routes;
+    if (!groups.length) throw new Error("inga sp\u00e5r hittades i filen");
+    const polygons = groups.map(g => {
+      const pts = [...g.getElementsByTagName("trkpt"), ...g.getElementsByTagName("rtept")];
+      const nameEl = g.getElementsByTagName("name")[0];
+      return {
+        name: nameEl ? nameEl.textContent.trim() : "",
+        points: pts.map(pt => [Number(pt.getAttribute("lat")), Number(pt.getAttribute("lon"))]).filter(p => !isNaN(p[0]) && !isNaN(p[1]))
+      };
+    }).filter(g => g.points.length >= 3);
+    if (!polygons.length) throw new Error("ingen sp\u00e5r med minst tre punkter");
+    const unassigned = state.paddocks.filter(p => !p.boundary);
+    let assigned = 0;
+    polygons.forEach((poly, i) => {
+      const byName = poly.name ? state.paddocks.find(p => p.name.toLowerCase() === poly.name.toLowerCase()) : null;
+      const target = byName || (unassigned.length ? unassigned.shift() : null);
+      if (!target) return;
+      target.boundary = poly.points;
+      const ha = polygonAreaHa(poly.points);
+      if (target.sizeHa == null || target.sizeHa === 0) target.sizeHa = ha;
+      assigned++;
+    });
+    if (!assigned) {
+      msg.textContent = "Alla marker har redan gr\u00e4nser. Ta bort en gr\u00e4ns f\u00f6rst om du vill importera om.";
+      return;
+    }
+    save();
+    render();
+    msg.textContent = assigned + " sp\u00e5r importerade. Hektar ber\u00e4knade fr\u00e5n arean. Kontrollera att r\u00e4tt sp\u00e5r hamnat p\u00e5 r\u00e4tt mark!";
+  } catch (err) {
+    msg.textContent = "Kunde inte l\u00e4sa GPX-filen: " + (err && err.message ? err.message : "ok\u00e4nt fel");
+  }
 }
 
 async function start() {
@@ -1046,6 +1266,8 @@ function renderData() {
 }
 
 function render() {
+  initMap();
+  renderMap();
   renderOverview();
   renderMoves();
   renderPaddocks();

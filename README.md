@@ -23,6 +23,11 @@ Appen fungerar bra på mobil och surfplatta.
 - **Översikt** – vilken mark varje grupp betar just nu och hur många dagar de varit där.
 - **Statistik** – flyttar per månad, antal beten per mark, snittåterhämtning (vila)
   och totala betade dagar per mark.
+- **Karta** – visa betesmarkerna på karta (OpenStreetMap). Importera ett GPX-spår
+  (t.ex. från en GPS-app där du gått runt markens gräns) så ritas gränsen och
+  hektaren beräknas automatiskt; markernas flyttar visas som streckade linjer mellan
+  områdena och djurgruppernas aktuella position markeras. Gränser kan också ritas
+  manuellt direkt på kartan.
 - **Data** – export/import av backup (JSON) samt möjlighet att radera all data.
 
 ## Teknik
