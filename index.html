@@ -240,6 +240,10 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
         <button type="button" id="draw-save" class="primary" hidden>Spara gräns</button>
         <button type="button" id="draw-cancel" class="ghost" hidden>Avbryt</button>
         <button type="button" id="locate-btn" class="secondary">Min position</button>
+        <label>Sök ort
+          <input type="text" id="place-search" placeholder="t.ex. Fåvang">
+        </label>
+        <button type="button" id="place-search-btn" class="secondary">Sök</button>
         <label>Importera GPX
           <input type="file" id="gpx-file" accept=".gpx,application/gpx+xml">
         </label>
@@ -498,6 +502,10 @@ function initMap() {
     render();
   });
   document.getElementById("locate-btn").addEventListener("click", locateMe);
+  document.getElementById("place-search-btn").addEventListener("click", searchPlace);
+  document.getElementById("place-search").addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); searchPlace(); }
+  });
   document.getElementById("gpx-file").addEventListener("change", e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -519,17 +527,48 @@ function locateMe() {
   msg.textContent = "H\u00e4mtar din position\u2026";
   navigator.geolocation.getCurrentPosition(pos => {
     const ll = [pos.coords.latitude, pos.coords.longitude];
-    mapInstance.setView(ll, Math.max(mapInstance.getZoom(), 16));
+    const acc = pos.coords.accuracy || 0;
+    const zoom = acc > 2000 ? 12 : acc > 500 ? 14 : 16;
+    mapInstance.setView(ll, zoom);
     L.circleMarker(ll, { radius: 10, color: "#1f4a24", fillColor: "#2e6b34", fillOpacity: 0.9, weight: 3 })
-      .bindPopup("Din position (\u00b1" + Math.round(pos.coords.accuracy) + " m)")
+      .bindPopup("Din position (\u00b1" + Math.round(acc) + " m)")
       .addTo(mapLayers)
       .openPopup();
-    msg.textContent = "Position hittad.";
+    if (acc > 1000) {
+      L.circle(ll, { radius: acc, color: "#c47f17", weight: 1, fillOpacity: 0.08 }).addTo(mapLayers);
+      msg.textContent = "Positionen \u00e4r os\u00e4ker (\u00b1" + Math.round(acc) + " m \u2013 troligen IP-/n\u00e4tverksgissning). P\u00e5 mobil med GPS blir den exakt. Anv\u00e4nd S\u00f6k ort om kartan hamnar fel.";
+    } else {
+      msg.textContent = "Position hittad (\u00b1" + Math.round(acc) + " m).";
+    }
   }, err => {
     msg.textContent = err.code === err.PERMISSION_DENIED
       ? "Platstj\u00e4nster nekad \u2013 till\u00e5t plats\u00e5tkomst i webbl\u00e4saren."
       : "Kunde inte h\u00e4mta din position.";
   }, { enableHighAccuracy: true, timeout: 15000 });
+}
+
+async function searchPlace() {
+  const msg = document.getElementById("map-msg");
+  const q = document.getElementById("place-search").value.trim();
+  if (!q) { msg.textContent = "Skriv en ort eller plats att s\u00f6ka efter."; return; }
+  msg.textContent = "S\u00f6ker\u2026";
+  try {
+    const res = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=no&q=" + encodeURIComponent(q));
+    const hits = await res.json();
+    if (!hits.length) {
+      msg.textContent = "Hittade ingen plats med det namnet. Prova att l\u00e4gga till kommun eller landskap, t.ex. \"" + q + " Norway\".";
+      return;
+    }
+    const ll = [Number(hits[0].lat), Number(hits[0].lon)];
+    mapInstance.setView(ll, 14);
+    L.circleMarker(ll, { radius: 8, color: "#c47f17", fillColor: "#c47f17", fillOpacity: 0.9, weight: 2 })
+      .bindPopup(esc(hits[0].display_name))
+      .addTo(mapLayers)
+      .openPopup();
+    msg.textContent = "Visar: " + hits[0].display_name;
+  } catch (err) {
+    msg.textContent = "S\u00f6kningen gick inte att k\u00f6ra (n\u00e4tverksfel).";
+  }
 }
 
 function updateDrawUI(active) {
