@@ -127,6 +127,36 @@ td.num { text-align: right; }
 }
 .arrow { color: var(--green); font-weight: 700; }
 .empty { color: var(--muted); font-style: italic; padding: 12px 0; }
+#auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: 20px;
+}
+.auth-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+  width: 100%;
+  max-width: 380px;
+}
+.auth-box h1 { margin: 0 0 4px; font-size: 1.3rem; color: var(--green-dark); }
+.auth-sub { margin: 0 0 18px; color: var(--muted); font-size: 0.9rem; }
+.auth-box form { display: flex; flex-direction: column; gap: 12px; }
+.user-bar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  max-width: 900px;
+  margin: 10px auto 0;
+  padding: 0 20px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
 .chart-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 0.85rem; }
 .chart-label { width: 90px; text-align: right; color: var(--muted); flex-shrink: 0; }
 .chart-bar { background: var(--green); border-radius: 4px; min-width: 2px; height: 18px; }
@@ -144,6 +174,26 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
 </head>
 <body>
 
+<div id="auth-screen" hidden>
+  <div class="auth-box">
+    <h1>🐄 AMP Betesflytt</h1>
+    <p class="auth-sub">Logga in på din gård</p>
+    <form id="login-form">
+      <label>E-post
+        <input type="email" name="email" autocomplete="email" required>
+      </label>
+      <label>Lösenord
+        <input type="password" name="password" autocomplete="current-password" minlength="6" required>
+      </label>
+      <button type="submit" class="primary" style="width:100%">Logga in</button>
+    </form>
+    <button id="register-btn" class="secondary" style="width:100%;margin-top:10px">Skapa nytt gårdskonto</button>
+    <p class="note" id="auth-msg"></p>
+    <p class="note">Varje konto är en egen gård – din data hålls separat från andras.</p>
+  </div>
+</div>
+
+<div id="app" hidden>
 <header>
   <h1>🐄 AMP Betesflytt</h1>
   <p>Registrera och följ dina djurs flyttningar mellan betesmarker</p>
@@ -156,6 +206,10 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
     <button data-tab="data">Data</button>
   </nav>
 </header>
+<div id="user-bar" class="user-bar" hidden>
+  <span id="user-email"></span>
+  <button id="logout-btn" class="ghost small">Logga ut</button>
+</div>
 
 <main>
   <section id="overview" class="active"></section>
@@ -166,10 +220,28 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
   <section id="data"></section>
 </main>
 
-<footer>AMP Betesflytt &mdash; adaptiv multi-paddock-betesbruk. Data sparas lokalt i din webbläsare.</footer>
+<footer>AMP Betesflytt &mdash; adaptiv multi-paddock-betesbruk.</footer>
+</div>
 
-<script>
-"use strict";
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "DIN_API_KEY_HÄR",
+  authDomain: "amp-grazing.firebaseapp.com",
+  projectId: "amp-grazing",
+  storageBucket: "amp-grazing.appspot.com",
+  messagingSenderId: "DIN_MESSAGING_SENDER_ID_HÄR",
+  appId: "DIN_APP_ID_HÄR"
+};
+
+const useFirebase = typeof firebaseConfig.apiKey === "string" && firebaseConfig.apiKey.startsWith("AIza");
+const app = useFirebase ? initializeApp(firebaseConfig) : null;
+const auth = useFirebase ? getAuth(app) : null;
+const db = useFirebase ? getFirestore(app) : null;
+let currentUser = null;
 
 const STORAGE_KEY = "amp-grazing-v1";
 
@@ -177,7 +249,7 @@ function emptyState() {
   return { paddocks: [], herds: [], moves: [] };
 }
 
-function load() {
+function loadLocalState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -190,10 +262,122 @@ function load() {
   return emptyState();
 }
 
-let state = load();
+let state = loadLocalState();
 
 function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (useFirebase && currentUser) {
+    persistUserState();
+  } else {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+}
+
+async function persistUserState() {
+  if (!currentUser) return;
+  try {
+    await setDoc(doc(db, "farms", currentUser.uid), {
+      paddocks: state.paddocks,
+      herds: state.herds,
+      moves: state.moves
+    });
+  } catch (err) {
+    console.error("Kunde inte spara till Firebase", err);
+  }
+}
+
+async function loadUserState(uid) {
+  const snap = await getDoc(doc(db, "farms", uid));
+  if (snap.exists()) {
+    const data = snap.data();
+    if (Array.isArray(data.paddocks) && Array.isArray(data.herds) && Array.isArray(data.moves)) {
+      return data;
+    }
+  }
+  const local = loadLocalState();
+  if (local.paddocks.length || local.herds.length || local.moves.length) {
+    state = local;
+    save();
+    return local;
+  }
+  return emptyState();
+}
+
+function showApp(user) {
+  document.getElementById("auth-screen").hidden = true;
+  document.getElementById("app").hidden = false;
+  const userBar = document.getElementById("user-bar");
+  const footer = document.querySelector("footer");
+  if (user) {
+    userBar.hidden = false;
+    document.getElementById("user-email").textContent = user.email || "";
+    footer.textContent = "AMP Betesflytt — inloggad som " + (user.email || "") + ". Din gårds data synkas till Firebase.";
+  } else {
+    userBar.hidden = true;
+    footer.textContent = "AMP Betesflytt — datan sparas lokalt i webbläsaren tills Firebase är konfigurerat (se README).";
+  }
+  render();
+}
+
+function showAuth() {
+  document.getElementById("app").hidden = true;
+  document.getElementById("auth-screen").hidden = false;
+}
+
+function authErrorText(err) {
+  const code = err && err.code ? err.code : "";
+  if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") return "Fel e-post eller lösenord.";
+  if (code === "auth/email-already-in-use") return "E-posten är redan registrerad – logga in istället.";
+  if (code === "auth/weak-password") return "Lösenordet måste vara minst 6 tecken.";
+  if (code === "auth/invalid-email") return "Ogiltig e-postadress.";
+  if (code === "auth/too-many-requests") return "För många försök – prova igen om en stund.";
+  return "Något gick fel: " + (err && err.message ? err.message : "okänt fel");
+}
+
+function setupAuthUI() {
+  const form = document.getElementById("login-form");
+  const msg = document.getElementById("auth-msg");
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    try {
+      await signInWithEmailAndPassword(auth, fd.get("email"), fd.get("password"));
+    } catch (err) {
+      msg.textContent = authErrorText(err);
+    }
+  });
+  document.getElementById("register-btn").addEventListener("click", async () => {
+    const fd = new FormData(form);
+    try {
+      await createUserWithEmailAndPassword(auth, fd.get("email"), fd.get("password"));
+    } catch (err) {
+      msg.textContent = authErrorText(err);
+    }
+  });
+  document.getElementById("logout-btn").addEventListener("click", () => signOut(auth));
+}
+
+async function start() {
+  if (!useFirebase) {
+    state = loadLocalState();
+    showApp(null);
+    return;
+  }
+  setupAuthUI();
+  onAuthStateChanged(auth, async user => {
+    if (user) {
+      currentUser = user;
+      try {
+        state = await loadUserState(user.uid);
+      } catch (err) {
+        console.error("Kunde inte läsa data", err);
+        state = emptyState();
+      }
+      showApp(user);
+    } else {
+      currentUser = null;
+      showAuth();
+    }
+  });
 }
 
 function uid() {
@@ -894,7 +1078,7 @@ document.addEventListener("submit", e => {
   }
 });
 
-render();
+start();
 </script>
 </body>
 </html>

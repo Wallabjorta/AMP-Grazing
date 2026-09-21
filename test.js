@@ -2,9 +2,26 @@ const fs = require("fs");
 const path = require("path");
 
 const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
-const src = html.match(/<script>([\s\S]*)<\/script>/)[1];
+const src = html.match(/<script type="module">([\s\S]*)<\/script>/)[1];
 
-const state = {
+function extractFn(name) {
+  const start = src.indexOf("function " + name + "(");
+  if (start === -1) throw new Error("function not found: " + name);
+  let depth = 0;
+  let i = src.indexOf("{", start);
+  const bodyStart = i;
+  while (i < src.length) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") {
+      depth--;
+      if (depth === 0) return src.slice(start, i + 1);
+    }
+    i++;
+  }
+  throw new Error("unbalanced braces for " + name);
+}
+
+const testState = {
   paddocks: [
     { id: "a", name: "A", sizeHa: 1 },
     { id: "b", name: "B", sizeHa: 2 },
@@ -19,19 +36,17 @@ const state = {
   ],
 };
 
-let body = src.replace(/^"use strict";/, "");
-body = body.replace(/const STORAGE_KEY[\s\S]*?let state = load\(\);/, "var state = " + JSON.stringify(state) + ";");
-body = body.replace(/function save\(\)\{[\s\S]*?\}/, "");
-body = body.replace(/render\(\);\s*$/, "");
-
-global.document = {
-  getElementById: () => ({ addEventListener: () => {} }),
-  querySelectorAll: () => [],
-  addEventListener: () => {},
-};
-global.window = global;
+const helpers = [
+  "emptyState", "compareMove", "movesForHerd", "currentPaddockId", "currentArrival",
+  "daysBetween", "todayIso", "nowTime", "fmtDate", "arrivalsTo", "departuresFrom",
+  "grazeDaysForPaddock", "avgRestDays", "movesPerMonth", "internalMovesIn"
+].map(extractFn).join("\n");
 
 const tests = `
+var state = ${JSON.stringify(testState)};
+(function(){
+${helpers}
+
 var ms = movesForHerd("h1");
 console.assert(ms.map(m=>m.id).join(",") === "m1,m2,m3,m4,m5", "moves should be chronologically sorted");
 console.assert(currentPaddockId("h1") === "a", "current paddock should be a");
@@ -43,5 +58,6 @@ console.assert(internalMovesIn("a").length === 2, "internal moves in A should be
 console.assert(internalMovesIn("b").length === 0, "internal moves in B should be 0");
 console.assert(movesPerMonth().length === 12, "movesPerMonth should cover 12 months");
 console.log("ALL LOGIC TESTS PASSED");
+})();
 `;
-eval(body + tests);
+eval(tests);

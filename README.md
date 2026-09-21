@@ -68,4 +68,37 @@ varje push till `main`. Konfigurera en gång:
    - `FIREBASE_PROJECT_ID` – ditt Firebase-projekt-id
 4. Pusha till `main` – workflowen deployar och appen live-uppdateras.
 
-Data sparas per webbläsare (localStorage) – se fliken Data i appen för backup/export.
+## Flera användare och gårdar (login)
+
+Appen har en inloggningssida där varje konto är en egen gård. Data lagras i Cloud Firestore
+under `farms/{uid}`, så varje gårds statistik hålls helt separat. Utan konfiguration (se nedan)
+körs appen i lokalt läge som tidigare, med localStorage.
+
+### Aktivera Authentication och Firestore (engångs)
+
+1. I Firebase-konsolen för projektet: **Build → Authentication → Get started** och aktivera
+   providern **Email/Password** (Email/Password → Enable → Save).
+2. **Build → Firestore Database → Create database** → välj produktion eller testläge → närmaste region.
+3. **Projektinställningar → Your apps → Web (`<`/`>`)** → registrera webbappen och kopiera
+   `firebaseConfig`-objektet.
+4. Klistra in config-värdena i `index.html` (sök på `firebaseConfig`) – ersätt platshållarna
+   `DIN_API_KEY_HÄR` osv. Committa och pusha till `main` – deployen sköter resten.
+5. Lägg till en Firestore-säkerhetsregel så att bara ägaren kan läsa/skriva sin gårds data
+   (Firestore → Rules):
+
+   ```
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /farms/{uid} {
+         allow read, write: if request.auth != null && request.auth.uid == uid;
+       }
+     }
+   }
+   ```
+
+Därefter: varje ny användare klickar **Skapa nytt gårdskonto** på inloggningssidan och får
+en egen, helt separat gård.
+
+Data sparas i Firestore när Firebase är konfigurerat; annars per webbläsare (localStorage) –
+se fliken Data i appen för backup/export.
