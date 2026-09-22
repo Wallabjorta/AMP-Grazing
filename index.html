@@ -176,16 +176,17 @@ td.num { text-align: center; }
 #print-report h1 { margin: 0 0 4px; font-size: 20px; }
 #print-report h2 { margin: 18px 0 6px; font-size: 16px; }
 #print-report h3 { margin: 12px 0 6px; font-size: 13px; }
-#print-report table { width: 100%; border-collapse: collapse; font-size: 12px; }
-#print-report th, #print-report td { border: 1px solid #bbb; padding: 4px 6px; text-align: center; }
+#print-report table { width: 100%; border-collapse: collapse; font-size: 11px; }
+#print-report th, #print-report td { border: 1px solid #bbb; padding: 2px 4px; text-align: center; }
 @media print {
+  @page { size: A4 portrait; margin: 12mm; }
   body { background: #fff; }
   #auth-screen, #app > nav, #user-bar, footer, #data, #overview, #moves, #paddocks, #herds, #stats, #map { display: none !important; }
   #app { display: block !important; }
   #print-report { display: block !important; }
   #print-report .pr-page { page-break-after: always; }
   #print-report .pr-page:last-child { page-break-after: auto; }
-  #print-report .pr-map { height: 45mm; }
+  #print-report .pr-map { height: 40mm; }
 }
 .rest-badge { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #fff; border: 2px solid #c47f17; border-radius: 50%; font-weight: 700; color: #7a4a0e; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
 .rest-badge-current { border-color: #2e6b34; color: #2e6b34; }
