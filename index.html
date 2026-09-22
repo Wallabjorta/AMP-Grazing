@@ -521,10 +521,10 @@ function initMap() {
     document.getElementById("draw-btn").hidden = true;
     document.getElementById("draw-save").hidden = false;
     document.getElementById("draw-cancel").hidden = false;
-    document.getElementById("map-msg").textContent = "Klicka ut markens h\u00f6rn p\u00e5 kartan. Dubbelklicka eller tryck Spara gr\u00e4ns n\u00e4r du \u00e4r klar.";
+    document.getElementById("map-msg").textContent = "Klicka ut markens h\u00f6rn p\u00e5 kartan \u2013 punkter n\u00e4ra befintliga gr\u00e4nser snapmar automatiskt. Tryck Spara gr\u00e4ns n\u00e4r du \u00e4r klar.";
     mapInstance.on("click", e => {
       if (!drawMode) return;
-      drawPoints.push([e.latlng.lat, e.latlng.lng]);
+      drawPoints.push(snapPoint(e.latlng));
       renderDrawPreview();
     });
   });
@@ -564,10 +564,10 @@ function initMap() {
     document.getElementById("draw-cancel").hidden = false;
     moveAreaMode = true;
     moveAreaPoints = [];
-    document.getElementById("map-msg").textContent = "Rita omr\u00e5det djuren f\u00e5tt (eller ska f\u00e5): klicka ut h\u00f6rnen, v\u00e4lj djurgrupp och tryck Spara flytt.";
+    document.getElementById("map-msg").textContent = "Rita omr\u00e5det djuren f\u00e5tt: klicka ut h\u00f6rnen \u2013 klick n\u00e4ra en befintlig gr\u00e4ns snapmar automatiskt till den, s\u00e5 att flyttytan passa precis inuti/s ansluten till marken. Tryck Spara flytt n\u00e4r du \u00e4r klar.";
     mapInstance.on("click", e => {
       if (!moveAreaMode) return;
-      moveAreaPoints.push([e.latlng.lat, e.latlng.lng]);
+      moveAreaPoints.push(snapPoint(e.latlng));
       renderMoveAreaPreview();
     });
   });
@@ -716,6 +716,36 @@ function paddockCenter(boundary) {
   const lat = boundary.reduce((s, p) => s + p[0], 0) / boundary.length;
   const lng = boundary.reduce((s, p) => s + p[1], 0) / boundary.length;
   return [lat, lng];
+}
+
+function snapCandidates() {
+  const polys = [];
+  for (const p of state.paddocks) if (p.boundary && p.boundary.length >= 3) polys.push(p.boundary);
+  for (const m of state.moves) if (m.areaBoundary && m.areaBoundary.length >= 3) polys.push(m.areaBoundary);
+  return polys;
+}
+
+function snapPoint(latlng) {
+  const pt = mapInstance.latLngToLayerPoint(latlng);
+  let best = null;
+  let bestD = 14;
+  for (const poly of snapCandidates()) {
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const pa = mapInstance.latLngToLayerPoint(L.latLng(a[0], a[1]));
+      const pb = mapInstance.latLngToLayerPoint(L.latLng(b[0], b[1]));
+      const dx = pb.x - pa.x, dy = pb.y - pa.y;
+      const lenSq = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((pt.x - pa.x) * dx + (pt.y - pa.y) * dy) / lenSq));
+      const projX = pa.x + t * dx, projY = pa.y + t * dy;
+      const d = Math.hypot(pt.x - projX, pt.y - projY);
+      if (d < bestD) {
+        bestD = d;
+        best = mapInstance.layerPointToLatLng([projX, projY]);
+      }
+    }
+  }
+  return best ? [best.lat, best.lng] : [latlng.lat, latlng.lng];
 }
 
 function renderDrawPreview() {
