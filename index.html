@@ -170,6 +170,8 @@ td.num { text-align: center; }
 .hbar { background: var(--green); border-radius: 4px; min-width: 2px; height: 18px; }
 .note { color: var(--muted); font-size: 0.85rem; }
 #map-canvas { height: 65vh; min-height: 350px; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 12px; }
+.rest-badge { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #fff; border: 2px solid #c47f17; border-radius: 50%; font-weight: 700; color: #7a4a0e; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+.rest-badge-current { border-color: #2e6b34; color: #2e6b34; }
 #map-canvas .leaflet-control-zoom { display: flex; flex-direction: column; }
 .leaflet-container { font: inherit; }
 footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20px; }
@@ -720,6 +722,24 @@ function paddockCenter(boundary) {
   return [lat, lng];
 }
 
+function moveAreaRestInfo(m) {
+  const ms = movesForHerd(m.herdId);
+  const idx = ms.findIndex(x => x.id === m.id);
+  if (idx < 0) return null;
+  const next = ms[idx + 1];
+  if (!next) return { current: true, days: Math.max(0, daysBetween(m.date, todayIso())) };
+  const ret = ms.slice(idx + 2).find(x => x.toPaddockId === m.toPaddockId && x.fromPaddockId !== x.toPaddockId);
+  const end = ret ? ret.date : todayIso();
+  return { current: false, days: Math.max(0, daysBetween(next.date, end)) };
+}
+function moveAreaBadge(info) {
+  if (!info) return null;
+  return L.divIcon({
+    className: "rest-badge" + (info.current ? " rest-badge-current" : ""),
+    html: String(info.days),
+    iconSize: [28, 28]
+  });
+}
 function snapCandidates() {
   const polys = [];
   for (const p of state.paddocks) if (p.boundary && p.boundary.length >= 3) polys.push(p.boundary);
@@ -764,6 +784,13 @@ function renderDrawPreview() {
     L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: false })
       .addTo(mapLayers);
   }
+  for (const m of state.moves) {
+    if (!m.areaBoundary) continue;
+    L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: false })
+      .addTo(mapLayers);
+    const badge = moveAreaBadge(moveAreaRestInfo(m));
+    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: false }).addTo(mapLayers);
+  }
   if (drawPoints.length) {
     L.polygon(drawPoints, { color: "#c47f17", weight: 2, dashArray: "6 4", fillOpacity: 0.1 }).addTo(mapLayers);
     drawPoints.forEach((pt, i) => L.circleMarker(pt, { radius: 6, color: "#c47f17", fillOpacity: 1 }).addTo(mapLayers));
@@ -785,9 +812,17 @@ function renderMap() {
   }
   for (const m of state.moves) {
     if (!m.areaBoundary) continue;
+    const info = moveAreaRestInfo(m);
+    const restText = info
+      ? (info.current
+          ? "Betar nu \u2013 dag " + info.days
+          : "Vila: " + info.days + " dag" + (info.days === 1 ? "" : "ar"))
+      : "";
     L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: !drawing })
-      .bindPopup(esc(herdName(m.herdId)) + ": " + formatArea(m.sizeHa) + "<br>" + fmtDate(m.date))
+      .bindPopup(esc(herdName(m.herdId)) + ": " + formatArea(m.sizeHa) + "<br>" + fmtDate(m.date) + (restText ? "<br>" + restText : ""))
       .addTo(mapLayers);
+    const badge = moveAreaBadge(info);
+    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: !drawing }).addTo(mapLayers);
   }
   for (const h of state.herds) {
     const ms = movesForHerd(h.id);
