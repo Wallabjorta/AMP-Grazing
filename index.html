@@ -759,6 +759,11 @@ function renderDrawPreview() {
         .addTo(mapLayers);
     }
   }
+  for (const m of state.moves) {
+    if (!m.areaBoundary) continue;
+    L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: false })
+      .addTo(mapLayers);
+  }
   if (drawPoints.length) {
     L.polygon(drawPoints, { color: "#c47f17", weight: 2, dashArray: "6 4", fillOpacity: 0.1 }).addTo(mapLayers);
     drawPoints.forEach((pt, i) => L.circleMarker(pt, { radius: 6, color: "#c47f17", fillOpacity: 1 }).addTo(mapLayers));
