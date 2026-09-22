@@ -247,6 +247,9 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
         <label id="movearea-herd-label" hidden>Djurgrupp
           <select id="movearea-herd"></select>
         </label>
+        <label id="movearea-date-label" hidden>Datum
+          <input type="date" id="movearea-date">
+        </label>
         <button type="button" id="locate-btn" class="secondary">Min position</button>
         <label>Sök ort
           <input type="text" id="place-search" placeholder="t.ex. Fåvang">
@@ -580,6 +583,8 @@ function initMap() {
       ? state.herds.map(h => '<option value="' + h.id + '">' + esc(h.name) + '</option>').join("")
       : '<option value="">Inga djurgrupper</option>';
     document.getElementById("movearea-herd-label").hidden = false;
+    document.getElementById("movearea-date-label").hidden = false;
+    document.getElementById("movearea-date").value = todayIso();
     document.getElementById("movearea-btn").hidden = true;
     document.getElementById("movearea-save").hidden = false;
     document.getElementById("draw-cancel").hidden = false;
@@ -599,6 +604,8 @@ function initMap() {
     const padId = document.getElementById("map-paddock").value;
     if (!herdId) { document.getElementById("map-msg").textContent = "V\u00e4lj en djurgrupp."; return; }
     if (moveAreaPoints.length < 3) { document.getElementById("map-msg").textContent = "Rita minst tre h\u00f6rn f\u00f6r omr\u00e5det."; return; }
+    const dateVal = document.getElementById("movearea-date").value;
+    if (!dateVal) { document.getElementById("map-msg").textContent = "V\u00e4lj ett datum f\u00f6r flytten."; return; }
     const boundary = moveAreaPoints.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6]);
     const sizeHa = polygonAreaHa(boundary);
     const from = currentPaddockId(herdId);
@@ -607,7 +614,7 @@ function initMap() {
       herdId,
       fromPaddockId: from,
       toPaddockId: padId,
-      date: todayIso(),
+      date: dateVal,
       time: nowTime(),
       note: "Ritad p\u00e5 karta",
       sizeHa,
@@ -641,6 +648,7 @@ function endMoveAreaMode() {
   document.getElementById("movearea-btn").hidden = false;
   document.getElementById("movearea-save").hidden = true;
   document.getElementById("movearea-herd-label").hidden = true;
+  document.getElementById("movearea-date-label").hidden = true;
   document.getElementById("draw-cancel").hidden = true;
 }
 
