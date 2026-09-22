@@ -846,6 +846,14 @@ function renderMap() {
           document.getElementById("map-msg").textContent = "Gr\u00e4nsen f\u00f6r " + p.name + " \u00e4r raderad.";
         }
       });
+    } else {
+      poly.on("click", () => {
+        const sel = document.getElementById("map-paddock");
+        if (sel && sel.value !== p.id) {
+          sel.value = p.id;
+          document.getElementById("map-msg").textContent = "Mark vald: " + p.name + ".";
+        }
+      });
     }
     poly.addTo(mapLayers);
     bounds.push(p.boundary);
