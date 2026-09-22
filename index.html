@@ -1549,25 +1549,77 @@ function renderStats() {
     </div>`;
 }
 
-function staticMapUrl(boundary, extraPts) {
+function mercPx(lat, lng, z) {
+  const n = 256 * Math.pow(2, z);
+  const latR = Math.max(-85.05, Math.min(85.05, lat)) * Math.PI / 180;
+  return {
+    x: (lng + 180) / 360 * n,
+    y: (1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2 * n
+  };
+}
+function loadTile(url) {
+  return new Promise(res => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => res(img);
+    img.onerror = () => res(null);
+    img.src = url;
+  });
+}
+async function reportMapImage(boundary, areas) {
   const pts = [];
   if (boundary) for (const pt of boundary) pts.push(pt);
-  if (extraPts) for (const pt of extraPts) pts.push(pt);
-  if (pts.length < 3) return null;
-  const lats = pts.map(p => p[0]), lngs = pts.map(p => p[1]);
-  const latMin = Math.min(...lats), latMax = Math.max(...lats);
-  const lngMin = Math.min(...lngs), lngMax = Math.max(...lngs);
-  const cLat = (latMin + latMax) / 2, cLng = (lngMin + lngMax) / 2;
-  let span = Math.max(latMax - latMin, (lngMax - lngMin) * Math.cos(cLat * Math.PI / 180));
-  let zoom = 17;
-  while (span > 0 && zoom > 10) {
-    const meters = span * 111320;
-    if (meters <= 600) break;
-    span /= 2;
-    zoom--;
+  for (const a of areas) for (const pt of a) pts.push(pt);
+  if (!pts.length) return null;
+  const W = 700, H = 300, margin = 40;
+  const latMin = Math.min(...pts.map(p => p[0])), latMax = Math.max(...pts.map(p => p[0]));
+  const lngMin = Math.min(...pts.map(p => p[1])), lngMax = Math.max(...pts.map(p => p[1]));
+  let z = 18, boxW = 0, boxH = 0;
+  while (z > 2) {
+    const a = mercPx(latMin, lngMin, z), b = mercPx(latMax, lngMax, z);
+    boxW = b.x - a.x; boxH = a.y - b.y;
+    if (boxW <= W - margin && boxH <= H - margin) break;
+    z--;
   }
-  return "https://staticmap.openstreetmap.de/staticmap.php?center=" + cLat.toFixed(5) + "," + cLng.toFixed(5)
-    + "&zoom=" + zoom + "&size=700x300&maptype=mapnik&markers=" + cLat.toFixed(5) + "," + cLng.toFixed(5) + ",red-pushpin";
+  const tl = mercPx(latMax, lngMin, z), br = mercPx(latMin, lngMax, z);
+  const offX = (tl.x + br.x) / 2 - W / 2, offY = (tl.y + br.y) / 2 - H / 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#e8eae5";
+  ctx.fillRect(0, 0, W, H);
+  const x0 = Math.floor(offX / 256), x1 = Math.floor((offX + W) / 256);
+  const y0 = Math.floor(offY / 256), y1 = Math.floor((offY + H) / 256);
+  const tiles = [];
+  for (let tx = x0; tx <= x1; tx++) for (let ty = y0; ty <= y1; ty++) tiles.push([tx, ty]);
+  if (tiles.length <= 30) {
+    const max = Math.pow(2, z);
+    const imgs = await Promise.all(tiles.map(([tx, ty]) =>
+      (tx < 0 || ty < 0 || tx >= max || ty >= max) ? null
+        : loadTile("https://tile.openstreetmap.org/" + z + "/" + tx + "/" + ty + ".png")));
+    imgs.forEach((img, i) => {
+      if (img) ctx.drawImage(img, tiles[i][0] * 256 - offX, tiles[i][1] * 256 - offY);
+    });
+  }
+  const drawPoly = (poly, stroke, fill, dash) => {
+    ctx.beginPath();
+    poly.forEach((pt, i) => {
+      const p = mercPx(pt[0], pt[1], z);
+      const x = p.x - offX, y = p.y - offY;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.setLineDash(dash || []);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = stroke;
+    ctx.stroke();
+    ctx.setLineDash([]);
+  };
+  for (const a of areas) drawPoly(a, "#c47f17", "rgba(196,127,23,0.28)", [8, 5]);
+  if (boundary) drawPoly(boundary, "#2e6b34", "rgba(46,107,52,0)");
+  return canvas.toDataURL("image/png");
 }
 async function buildPrintReport() {
   const el = document.getElementById("print-report");
@@ -1578,10 +1630,9 @@ async function buildPrintReport() {
   const areaMoves = state.moves.filter(m => m.areaBoundary);
   for (const p of state.paddocks) {
     const inMoves = state.moves.filter(m => m.toPaddockId === p.id).sort(compareMove);
-    const areas = areaMoves.filter(m => m.toPaddockId === p.id);
-    const extraPts = !p.boundary ? areas.flatMap(m => m.areaBoundary) : null;
-    const mapUrl = staticMapUrl(p.boundary, extraPts);
-    const mapImg = mapUrl ? '<img class="pr-map" src="' + mapUrl + '" alt="">' : '';
+    const areas = areaMoves.filter(m => m.toPaddockId === p.id).map(m => m.areaBoundary);
+    const mapData = await reportMapImage(p.boundary, areas);
+    const mapImg = mapData ? '<img class="pr-map" src="' + mapData + '" alt="">' : '<p class="note">Ingen karta \u2013 marken saknar gr\u00e4ns.</p>';
     const rows = inMoves.map(m => "<tr><td>" + fmtDate(m.date) + "</td><td>" + esc(herdName(m.herdId)) + "</td><td>"
       + (m.fromPaddockId ? esc(paddockName(m.fromPaddockId)) : "\u2013") + " \u2192 " + esc(p.name)
       + (m.fromPaddockId === p.id ? " (inom marken)" : "") + "</td><td>" + (m.sizeHa != null ? formatArea(m.sizeHa) : "\u2013") + "</td></tr>").join("");
@@ -1595,8 +1646,6 @@ async function buildPrintReport() {
       + "</div>");
   }
   el.innerHTML = pages.join("") || header + "<p>Inga betesmarker registrerade.</p>";
-  const imgs = [...el.querySelectorAll("img.pr-map")];
-  await Promise.all(imgs.map(img => img.complete ? null : new Promise(res => { img.onload = res; img.onerror = res; })));
 }
 function renderData() {
   const el = document.getElementById("data");
