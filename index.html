@@ -172,7 +172,7 @@ td.num { text-align: center; }
 #map-canvas { height: 65vh; min-height: 350px; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 12px; }
 #print-report { display: none; }
 #print-report .pr-page { page-break-after: always; }
-#print-report .pr-map { width: 100%; height: 300px; border: 1px solid #999; }
+#print-report .pr-map { width: 100%; height: auto; border: 1px solid #999; }
 #print-report h1 { margin: 0 0 4px; font-size: 20px; }
 #print-report h2 { margin: 18px 0 6px; font-size: 16px; }
 #print-report h3 { margin: 12px 0 6px; font-size: 13px; }
@@ -186,7 +186,7 @@ td.num { text-align: center; }
   #print-report { display: block !important; }
   #print-report .pr-page { page-break-after: always; }
   #print-report .pr-page:last-child { page-break-after: auto; }
-  #print-report .pr-map { height: 40mm; }
+  #print-report .pr-map { width: 100%; height: auto; }
 }
 .rest-badge { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #fff; border: 2px solid #c47f17; border-radius: 50%; font-weight: 700; color: #7a4a0e; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
 .rest-badge-current { border-color: #2e6b34; color: #2e6b34; }
@@ -1572,7 +1572,7 @@ async function reportMapImage(boundary, areas) {
   if (boundary) for (const pt of boundary) pts.push(pt);
   for (const a of areas) for (const pt of a) pts.push(pt);
   if (!pts.length) return null;
-  const W = 700, H = 300, margin = 40;
+  const W = 760, H = 760, margin = 48;
   const latMin = Math.min(...pts.map(p => p[0])), latMax = Math.max(...pts.map(p => p[0]));
   const lngMin = Math.min(...pts.map(p => p[1])), lngMax = Math.max(...pts.map(p => p[1]));
   let z = 18, boxW = 0, boxH = 0;
