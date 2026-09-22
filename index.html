@@ -242,6 +242,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
         <button type="button" id="draw-save" class="primary" hidden>Spara gräns</button>
         <button type="button" id="draw-cancel" class="ghost" hidden>Avbryt</button>
         <button type="button" id="movearea-btn" class="secondary">Rita flyttyta</button>
+        <button type="button" id="delete-area-btn" class="secondary">Radera polygon</button>
         <button type="button" id="movearea-save" class="primary" hidden>Spara flytt</button>
         <label id="movearea-herd-label" hidden>Djurgrupp
           <select id="movearea-herd"></select>
@@ -505,6 +506,7 @@ let drawMode = false;
 let drawPoints = [];
 let moveAreaMode = false;
 let moveAreaPoints = [];
+let deleteAreaMode = false;
 
 function initMap() {
   const canvas = document.getElementById("map-canvas");
@@ -526,17 +528,33 @@ function initMap() {
     document.getElementById("draw-cancel").hidden = false;
     document.getElementById("map-msg").textContent = "Klicka ut markens h\u00f6rn p\u00e5 kartan \u2013 punkter n\u00e4ra befintliga gr\u00e4nser snapmar automatiskt (st\u00f6rre snap p\u00e5 mobil). Tryck Spara gr\u00e4ns n\u00e4r du \u00e4r klar.";
     mapInstance.on("click", e => {
-      if (!drawMode) return;
-      drawPoints.push(snapPoint(e.latlng));
-      renderDrawPreview();
-    });
+    if (deleteAreaMode) return;
+    if (!drawMode) return;
+    drawPoints.push(snapPoint(e.latlng));
+    renderDrawPreview();
+  });
   });
   document.getElementById("draw-cancel").addEventListener("click", () => {
     drawMode = false;
     drawPoints = [];
     endMoveAreaMode();
+    deleteAreaMode = false;
     updateDrawUI(false);
     renderMap();
+  });
+  document.getElementById("delete-area-btn").addEventListener("click", () => {
+    deleteAreaMode = !deleteAreaMode;
+    drawMode = false;
+    drawPoints = [];
+    endMoveAreaMode();
+    updateDrawUI(false);
+    renderMap();
+    if (deleteAreaMode) {
+      document.getElementById("draw-cancel").hidden = false;
+      document.getElementById("map-msg").textContent = "Radera polygon: klicka p\u00e5 en flyttyta f\u00f6r att ta bort flytten, eller p\u00e5 en markgr\u00e4ns f\u00f6r att ta bort gr\u00e4nsen. Tryck Avbryt n\u00e4r du \u00e4r klar.";
+    } else {
+      document.getElementById("map-msg").textContent = "";
+    }
   });
   document.getElementById("draw-save").addEventListener("click", () => {
     const id = document.getElementById("map-paddock").value;
@@ -570,10 +588,11 @@ function initMap() {
     renderMap();
     document.getElementById("map-msg").textContent = "Rita omr\u00e5det djuren f\u00e5tt: klicka ut h\u00f6rnen \u2013 klick n\u00e4ra en befintlig gr\u00e4ns snapmar automatiskt till den, s\u00e5 att flyttytan passa precis inuti/s ansluten till marken. Tryck Spara flytt n\u00e4r du \u00e4r klar.";
     mapInstance.on("click", e => {
-      if (!moveAreaMode) return;
-      moveAreaPoints.push(snapPoint(e.latlng));
-      renderMoveAreaPreview();
-    });
+    if (deleteAreaMode) return;
+    if (!moveAreaMode) return;
+    moveAreaPoints.push(snapPoint(e.latlng));
+    renderMoveAreaPreview();
+  });
   });
   document.getElementById("movearea-save").addEventListener("click", () => {
     const herdId = document.getElementById("movearea-herd").value;
@@ -802,11 +821,24 @@ function renderMap() {
   updateMapPaddockSelect();
   mapLayers.clearLayers();
   const drawing = drawMode || moveAreaMode;
+  const deleting = deleteAreaMode;
   const bounds = [];
   for (const p of state.paddocks) {
     if (!p.boundary) continue;
     const poly = L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15, interactive: !drawing })
       .bindPopup("<strong>" + esc(p.name) + "</strong>" + (p.sizeHa != null ? "<br>" + p.sizeHa + " ha" : ""));
+    if (deleting) {
+      poly.on("click", () => {
+        if (window.confirm("Ta bort gr\u00e4nsen f\u00f6r " + p.name + "? Marken och dess flyttar finns kvar \u2013 bara kartgr\u00e4nsen och automatiskt r\u00e4knad yta tas bort.")) {
+          p.boundary = null;
+          p.sizeHa = null;
+          save();
+          renderMap();
+          render();
+          document.getElementById("map-msg").textContent = "Gr\u00e4nsen f\u00f6r " + p.name + " \u00e4r raderad.";
+        }
+      });
+    }
     poly.addTo(mapLayers);
     bounds.push(p.boundary);
   }
@@ -818,11 +850,22 @@ function renderMap() {
           ? "Betar nu \u2013 dag " + info.days
           : "Vila: " + info.days + " dag" + (info.days === 1 ? "" : "ar"))
       : "";
-    L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: !drawing })
-      .bindPopup(esc(herdName(m.herdId)) + ": " + formatArea(m.sizeHa) + "<br>" + fmtDate(m.date) + (restText ? "<br>" + restText : ""))
-      .addTo(mapLayers);
+    const area = L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: !drawing })
+      .bindPopup(esc(herdName(m.herdId)) + ": " + formatArea(m.sizeHa) + "<br>" + fmtDate(m.date) + (restText ? "<br>" + restText : ""));
+    if (deleting) {
+      area.on("click", () => {
+        if (window.confirm("Ta bort flytten " + fmtDate(m.date) + " (" + herdName(m.herdId) + ") och dess yta? Flytten raderas \u00e4ven ur statistiken.")) {
+          state.moves = state.moves.filter(x => x.id !== m.id);
+          save();
+          renderMap();
+          render();
+          document.getElementById("map-msg").textContent = "Flytten \u00e4r raderad.";
+        }
+      });
+    }
+    area.addTo(mapLayers);
     const badge = moveAreaBadge(info);
-    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: !drawing }).addTo(mapLayers);
+    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: !deleting }).addTo(mapLayers);
   }
   for (const h of state.herds) {
     const ms = movesForHerd(h.id);
