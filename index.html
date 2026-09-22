@@ -1263,16 +1263,48 @@ function renderMoves() {
   const herdOpts = state.herds.map(h => `<option value="${h.id}">${esc(h.name)}</option>`).join("");
   const padOpts = '<option value="">– ingen –</option>' + state.paddocks.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
 
+  const editId = el.dataset.editMoveId || "";
   const sorted = [...state.moves].sort((a, b) => compareMove(b, a));
-  const rows = sorted.map(m => `
+  const rows = sorted.map(m => {
+    if (m.id === editId) {
+      return `
+    <tr class="edit-row">
+      <td colspan="6">
+        <form class="inline" data-action="save-move" data-id="${m.id}">
+          <label>Datum
+            <input type="date" name="date" value="${m.date}" required>
+          </label>
+          <label>Flyttar fr\u00e5n
+            <select name="from">${state.paddocks.map(p => `<option value="${p.id}" ${p.id === m.fromPaddockId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
+          </label>
+          <label>Flyttar till
+            <select name="to" required>${state.paddocks.map(p => `<option value="${p.id}" ${p.id === m.toPaddockId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
+          </label>
+          <label>Yta (ha)
+            <input type="text" name="sizeHa" inputmode="decimal" value="${m.sizeHa != null ? esc(String(m.sizeHa).replace(".", ",")) : ""}" placeholder="t.ex. 0,1">
+          </label>
+          <label>Anteckning
+            <input type="text" name="note" value="${esc(m.note || "")}">
+          </label>
+          <button type="submit" class="primary small">Spara</button>
+          <button type="button" class="ghost small" data-action="cancel-edit-move">Avbryt</button>
+        </form>
+      </td>
+    </tr>`;
+    }
+    return `
     <tr>
       <td>${fmtDate(m.date)}${m.time ? ' <span class="note">' + esc(m.time) + '</span>' : ""}</td>
       <td>${esc(herdName(m.herdId))}</td>
       <td>${esc(paddockName(m.fromPaddockId))} <span class="arrow">&rarr;</span> ${esc(paddockName(m.toPaddockId))}</td>
       <td class="num">${formatArea(m.sizeHa)}</td>
       <td class="hide-sm">${esc(m.note || "")}</td>
-      <td><button class="danger small" data-action="del-move" data-id="${m.id}">Ta bort</button></td>
-    </tr>`).join("");
+      <td>
+        <button class="ghost small" data-action="edit-move" data-id="${m.id}">Redigera</button>
+        <button class="danger small" data-action="del-move" data-id="${m.id}">Ta bort</button>
+      </td>
+    </tr>`;
+  }).join("");
 
   el.innerHTML = `
     <div class="card">
@@ -1780,6 +1812,16 @@ document.addEventListener("click", e => {
     if (sel) sel.value = btn.dataset.herd;
     return;
   }
+  if (action === "edit-move") {
+    document.getElementById("moves").dataset.editMoveId = btn.dataset.id;
+    renderMoves();
+    return;
+  }
+  if (action === "cancel-edit-move") {
+    delete document.getElementById("moves").dataset.editMoveId;
+    renderMoves();
+    return;
+  }
   if (action === "del-move") {
     if (confirm("Ta bort denna flytt?")) {
       state.moves = state.moves.filter(m => m.id !== btn.dataset.id);
@@ -1866,6 +1908,25 @@ document.addEventListener("submit", e => {
   if (!form) return;
   const action = form.dataset.action;
   const id = form.dataset.id;
+  if (action === "save-move") {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const m = state.moves.find(x => x.id === id);
+    if (!m) return;
+    const from = fd.get("from") || null;
+    const to = fd.get("to");
+    const date = fd.get("date");
+    if (!to || !date) return;
+    m.fromPaddockId = from;
+    m.toPaddockId = to;
+    m.date = date;
+    m.sizeHa = parseArea(fd.get("sizeHa"));
+    m.note = (fd.get("note") || "").trim();
+    delete document.getElementById("moves").dataset.editMoveId;
+    save();
+    render();
+    return;
+  }
   if (action === "save-paddock") {
     e.preventDefault();
     const fd = new FormData(form);
