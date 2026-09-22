@@ -170,6 +170,23 @@ td.num { text-align: center; }
 .hbar { background: var(--green); border-radius: 4px; min-width: 2px; height: 18px; }
 .note { color: var(--muted); font-size: 0.85rem; }
 #map-canvas { height: 65vh; min-height: 350px; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 12px; }
+#print-report { display: none; }
+#print-report .pr-page { page-break-after: always; }
+#print-report .pr-map { width: 100%; height: 300px; border: 1px solid #999; }
+#print-report h1 { margin: 0 0 4px; font-size: 20px; }
+#print-report h2 { margin: 18px 0 6px; font-size: 16px; }
+#print-report h3 { margin: 12px 0 6px; font-size: 13px; }
+#print-report table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#print-report th, #print-report td { border: 1px solid #bbb; padding: 4px 6px; text-align: center; }
+@media print {
+  body { background: #fff; }
+  #auth-screen, #app > nav, #user-bar, footer, #data, #overview, #moves, #paddocks, #herds, #stats, #map { display: none !important; }
+  #app { display: block !important; }
+  #print-report { display: block !important; }
+  #print-report .pr-page { page-break-after: always; }
+  #print-report .pr-page:last-child { page-break-after: auto; }
+  #print-report .pr-map { height: 45mm; }
+}
 .rest-badge { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #fff; border: 2px solid #c47f17; border-radius: 50%; font-weight: 700; color: #7a4a0e; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
 .rest-badge-current { border-color: #2e6b34; color: #2e6b34; }
 #map-canvas .leaflet-control-zoom { display: flex; flex-direction: column; }
@@ -265,6 +282,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
     </div>
   </section>
   <section id="data"></section>
+  <section id="print-report"></section>
 </main>
 
 <footer>AMP Betesflytt &mdash; adaptiv multi-paddock-betesbruk.</footer>
@@ -1531,6 +1549,55 @@ function renderStats() {
     </div>`;
 }
 
+function staticMapUrl(boundary, extraPts) {
+  const pts = [];
+  if (boundary) for (const pt of boundary) pts.push(pt);
+  if (extraPts) for (const pt of extraPts) pts.push(pt);
+  if (pts.length < 3) return null;
+  const lats = pts.map(p => p[0]), lngs = pts.map(p => p[1]);
+  const latMin = Math.min(...lats), latMax = Math.max(...lats);
+  const lngMin = Math.min(...lngs), lngMax = Math.max(...lngs);
+  const cLat = (latMin + latMax) / 2, cLng = (lngMin + lngMax) / 2;
+  let span = Math.max(latMax - latMin, (lngMax - lngMin) * Math.cos(cLat * Math.PI / 180));
+  let zoom = 17;
+  while (span > 0 && zoom > 10) {
+    const meters = span * 111320;
+    if (meters <= 600) break;
+    span /= 2;
+    zoom--;
+  }
+  return "https://staticmap.openstreetmap.de/staticmap.php?center=" + cLat.toFixed(5) + "," + cLng.toFixed(5)
+    + "&zoom=" + zoom + "&size=700x300&maptype=mapnik&markers=" + cLat.toFixed(5) + "," + cLng.toFixed(5) + ",red-pushpin";
+}
+async function buildPrintReport() {
+  const el = document.getElementById("print-report");
+  const pages = [];
+  const totalMoves = state.moves.length;
+  const header = "<h1>AMP Betesflytt \u2013 rapport</h1>"
+    + "<p>" + todayIso() + " \u00b7 " + state.paddocks.length + " marker \u00b7 " + state.herds.length + " djurgrupper \u00b7 " + totalMoves + " flyttar</p>";
+  const areaMoves = state.moves.filter(m => m.areaBoundary);
+  for (const p of state.paddocks) {
+    const inMoves = state.moves.filter(m => m.toPaddockId === p.id).sort(compareMove);
+    const areas = areaMoves.filter(m => m.toPaddockId === p.id);
+    const extraPts = !p.boundary ? areas.flatMap(m => m.areaBoundary) : null;
+    const mapUrl = staticMapUrl(p.boundary, extraPts);
+    const mapImg = mapUrl ? '<img class="pr-map" src="' + mapUrl + '" alt="">' : '';
+    const rows = inMoves.map(m => "<tr><td>" + fmtDate(m.date) + "</td><td>" + esc(herdName(m.herdId)) + "</td><td>"
+      + (m.fromPaddockId ? esc(paddockName(m.fromPaddockId)) : "\u2013") + " \u2192 " + esc(p.name)
+      + (m.fromPaddockId === p.id ? " (inom marken)" : "") + "</td><td>" + (m.sizeHa != null ? formatArea(m.sizeHa) : "\u2013") + "</td></tr>").join("");
+    pages.push('<div class="pr-page">' + header
+      + "<h2>" + esc(p.name) + (p.sizeHa != null ? " (" + p.sizeHa + " ha)" : "") + "</h2>"
+      + mapImg
+      + "<h3>Flyttar</h3>"
+      + (inMoves.length
+        ? '<table><tr><th>Datum</th><th>Djurgrupp</th><th>Flytt</th><th>Yta</th></tr>' + rows + "</table>"
+        : '<p>Inga flyttar registrerade \u00e4n.</p>')
+      + "</div>");
+  }
+  el.innerHTML = pages.join("") || header + "<p>Inga betesmarker registrerade.</p>";
+  const imgs = [...el.querySelectorAll("img.pr-map")];
+  await Promise.all(imgs.map(img => img.complete ? null : new Promise(res => { img.onload = res; img.onerror = res; })));
+}
 function renderData() {
   const el = document.getElementById("data");
   const count = state.paddocks.length + state.herds.length + state.moves.length;
@@ -1540,6 +1607,7 @@ function renderData() {
       <p>Din data (${count} poster) sparas automatiskt i molnet och är kopplad till ditt konto — samma data på mobil, surfplatta och dator. Exportera en säkerhetskopia regelbundet.</p>
       <p>
         <button class="primary" data-action="export">Exportera backup (JSON)</button>
+        <button class="primary" data-action="export-pdf">Exportera rapport (PDF)</button>
       </p>
       <p>
         <label style="flex-direction:row; align-items:center; gap:8px;">
@@ -1680,6 +1748,11 @@ document.addEventListener("click", e => {
     a.download = "amp-betesflytt-backup-" + todayIso() + ".json";
     a.click();
     URL.revokeObjectURL(url);
+    return;
+  }
+  if (action === "export-pdf") {
+    buildPrintReport();
+    window.print();
     return;
   }
   if (action === "wipe") {
