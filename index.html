@@ -518,10 +518,11 @@ function initMap() {
     if (!sel.value) { document.getElementById("map-msg").textContent = "V\u00e4lj en mark f\u00f6rst."; return; }
     drawMode = true;
     drawPoints = [];
+    renderMap();
     document.getElementById("draw-btn").hidden = true;
     document.getElementById("draw-save").hidden = false;
     document.getElementById("draw-cancel").hidden = false;
-    document.getElementById("map-msg").textContent = "Klicka ut markens h\u00f6rn p\u00e5 kartan \u2013 punkter n\u00e4ra befintliga gr\u00e4nser snapmar automatiskt. Tryck Spara gr\u00e4ns n\u00e4r du \u00e4r klar.";
+    document.getElementById("map-msg").textContent = "Klicka ut markens h\u00f6rn p\u00e5 kartan \u2013 punkter n\u00e4ra befintliga gr\u00e4nser snapmar automatiskt (st\u00f6rre snap p\u00e5 mobil). Tryck Spara gr\u00e4ns n\u00e4r du \u00e4r klar.";
     mapInstance.on("click", e => {
       if (!drawMode) return;
       drawPoints.push(snapPoint(e.latlng));
@@ -564,6 +565,7 @@ function initMap() {
     document.getElementById("draw-cancel").hidden = false;
     moveAreaMode = true;
     moveAreaPoints = [];
+    renderMap();
     document.getElementById("map-msg").textContent = "Rita omr\u00e5det djuren f\u00e5tt: klicka ut h\u00f6rnen \u2013 klick n\u00e4ra en befintlig gr\u00e4ns snapmar automatiskt till den, s\u00e5 att flyttytan passa precis inuti/s ansluten till marken. Tryck Spara flytt n\u00e4r du \u00e4r klar.";
     mapInstance.on("click", e => {
       if (!moveAreaMode) return;
@@ -728,7 +730,8 @@ function snapCandidates() {
 function snapPoint(latlng) {
   const pt = mapInstance.latLngToLayerPoint(latlng);
   let best = null;
-  let bestD = 14;
+  const isTouch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  let bestD = isTouch ? 32 : 14;
   for (const poly of snapCandidates()) {
     for (let i = 0; i < poly.length; i++) {
       const a = poly[i], b = poly[(i + 1) % poly.length];
@@ -752,8 +755,7 @@ function renderDrawPreview() {
   mapLayers.clearLayers();
   for (const p of state.paddocks) {
     if (p.boundary) {
-      L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15 })
-        .bindPopup("<strong>" + esc(p.name) + "</strong>" + (p.sizeHa != null ? "<br>" + p.sizeHa + " ha" : ""))
+      L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15, interactive: false })
         .addTo(mapLayers);
     }
   }
@@ -767,17 +769,18 @@ function renderMap() {
   if (!mapInstance) return;
   updateMapPaddockSelect();
   mapLayers.clearLayers();
+  const drawing = drawMode || moveAreaMode;
   const bounds = [];
   for (const p of state.paddocks) {
     if (!p.boundary) continue;
-    const poly = L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15 })
+    const poly = L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15, interactive: !drawing })
       .bindPopup("<strong>" + esc(p.name) + "</strong>" + (p.sizeHa != null ? "<br>" + p.sizeHa + " ha" : ""));
     poly.addTo(mapLayers);
     bounds.push(p.boundary);
   }
   for (const m of state.moves) {
     if (!m.areaBoundary) continue;
-    L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4" })
+    L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: !drawing })
       .bindPopup(esc(herdName(m.herdId)) + ": " + formatArea(m.sizeHa) + "<br>" + fmtDate(m.date))
       .addTo(mapLayers);
   }
