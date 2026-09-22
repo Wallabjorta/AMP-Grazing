@@ -1572,7 +1572,7 @@ async function reportMapImage(boundary, areas) {
   if (boundary) for (const pt of boundary) pts.push(pt);
   for (const a of areas) for (const pt of a) pts.push(pt);
   if (!pts.length) return null;
-  const W = 760, H = 760, margin = 48;
+  const W = 380, H = 380, margin = 24;
   const latMin = Math.min(...pts.map(p => p[0])), latMax = Math.max(...pts.map(p => p[0]));
   const lngMin = Math.min(...pts.map(p => p[1])), lngMax = Math.max(...pts.map(p => p[1]));
   let z = 18, boxW = 0, boxH = 0;
@@ -1618,8 +1618,30 @@ async function reportMapImage(boundary, areas) {
     ctx.stroke();
     ctx.setLineDash([]);
   };
-  for (const a of areas) drawPoly(a, "#c47f17", "rgba(196,127,23,0.28)", [8, 5]);
+  const centers = [];
+  for (const a of areas) {
+    drawPoly(a, "#c47f17", "rgba(196,127,23,0.28)", [8, 5]);
+    centers.push(a.reduce((s, pt) => [s[0] + pt[0], s[1] + pt[1]], [0, 0]).map(v => v / a.length));
+  }
   if (boundary) drawPoly(boundary, "#2e6b34", "rgba(46,107,52,0)");
+  centers.forEach((c, i) => {
+    const rest = areas[i].restInfo;
+    if (!rest) return;
+    const p = mercPx(c[0], c[1], z);
+    const x = p.x - offX, y = p.y - offY;
+    ctx.beginPath();
+    ctx.arc(x, y, 16, 0, 2 * Math.PI);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = rest.current ? "#2e6b34" : "#c47f17";
+    ctx.stroke();
+    ctx.fillStyle = rest.current ? "#2e6b34" : "#7a4a0e";
+    ctx.font = "bold 15px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(rest.days), x, y);
+  });
   return canvas.toDataURL("image/png");
 }
 async function buildPrintReport() {
@@ -1631,7 +1653,9 @@ async function buildPrintReport() {
   const areaMoves = state.moves.filter(m => m.areaBoundary);
   for (const p of state.paddocks) {
     const inMoves = state.moves.filter(m => m.toPaddockId === p.id).sort(compareMove);
-    const areas = areaMoves.filter(m => m.toPaddockId === p.id).map(m => m.areaBoundary);
+    const areas = areaMoves
+      .filter(m => m.toPaddockId === p.id)
+      .map(m => { const a = m.areaBoundary.slice(); a.restInfo = moveAreaRestInfo(m); return a; });
     const mapData = await reportMapImage(p.boundary, areas);
     const mapImg = mapData ? '<img class="pr-map" src="' + mapData + '" alt="">' : '<p class="note">Ingen karta \u2013 marken saknar gr\u00e4ns.</p>';
     const rows = inMoves.map(m => "<tr><td>" + fmtDate(m.date) + "</td><td>" + esc(herdName(m.herdId)) + "</td><td>"
