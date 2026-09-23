@@ -1214,12 +1214,13 @@ function renderOverview() {
     const allMoves = movesForHerd(h.id);
     const internalCount = allMoves.filter(m => m.fromPaddockId === m.toPaddockId).length;
     const moveCount = allMoves.length;
+    const animalDays = allMoves.reduce((s, m) => s + moveAnimalDays(m), 0);
     return `
       <div class="herd-card">
         <div class="name">${esc(h.name)} <span class="badge">${h.count} djur</span></div>
         <div class="now">${nowHtml}</div>
         <div class="now">${daysHtml}</div>
-        <div class="meta">${moveCount} flyttar registrerade${internalCount ? " (" + internalCount + " inom marken)" : ""}</div>
+        <div class="meta">${moveCount} flyttar registrerade${internalCount ? " (" + internalCount + " inom marken)" : ""} &middot; ${animalDays} djurdagar totalt</div>
         <div style="margin-top:10px">
           <button class="secondary small" data-action="quick-move" data-herd="${h.id}">Registrera flytt</button>
         </div>
@@ -1409,6 +1410,7 @@ function renderPaddocks() {
     const internal = internalMovesIn(p.id).length;
     const rest = avgRestDays(p.id);
     const graze = grazeDaysForPaddock(p.id);
+    const animalDays = paddockAnimalDays(p.id);
     if (p.id === editing) {
       return `
         <tr>
@@ -1430,6 +1432,7 @@ function renderPaddocks() {
         <td class="num">${internal}</td>
         <td>${rest === null ? "–" : rest + " dagar"}</td>
         <td class="num">${graze}</td>
+        <td class="num">${animalDays}</td>
         <td>
           <button class="ghost small" data-action="edit-paddock" data-id="${p.id}">Redigera</button>
           <button class="danger small" data-action="del-paddock" data-id="${p.id}">Ta bort</button>
@@ -1450,10 +1453,10 @@ function renderPaddocks() {
       <h2>Betesmarker (${state.paddocks.length})</h2>
       ${state.paddocks.length ? `
         <table>
-          <thead><tr><th>Mark</th><th class="num">Hektar</th><th class="num">Antal beten</th><th class="num">Flyttar inom</th><th>Snitt vila</th><th class="num">Betade dagar</th><th></th></tr></thead>
+          <thead><tr><th>Mark</th><th class="num">Hektar</th><th class="num">Antal beten</th><th class="num">Flyttar inom</th><th>Snitt vila</th><th class="num">Betade dagar</th><th class="num">Djurdagar</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
-        <p class="note">Snitt vila = genomsnittlig återhämtningstid mellan betestillfällen. Betade dagar = total tid djur varit på marken.</p>` :
+        <p class="note">Snitt vila = genomsnittlig återhämtningstid mellan betestillfällen. Betade dagar = total tid djur varit på marken. Djurdagar = antal djur × betade dagar.</p>` :
         '<p class="empty">Inga betesmarker ännu.</p>'}
     </div>`;
 
@@ -1559,7 +1562,8 @@ function renderStats() {
       internalCount: internal.length,
       avgSize,
       rest: avgRestDays(p.id),
-      grazeDays: grazeDaysForPaddock(p.id)
+      grazeDays: grazeDaysForPaddock(p.id),
+      animalDays: paddockAnimalDays(p.id)
     };
   }).sort((a, b) => b.count - a.count);
   const maxCount = Math.max(1, ...perPaddock.map(p => p.count));
@@ -1580,6 +1584,7 @@ function renderStats() {
       <td class="num">${p.avgSize === null ? "–" : p.avgSize}</td>
       <td>${p.rest === null ? "–" : p.rest + " dagar"}</td>
       <td class="num">${p.grazeDays}</td>
+      <td class="num">${p.animalDays}</td>
     </tr>`).join("");
 
   el.innerHTML = `
@@ -1589,6 +1594,7 @@ function renderStats() {
       <div class="stat"><div class="value">${totalPaddocks}</div><div class="label">Betesmarker</div></div>
       <div class="stat"><div class="value">${grazedPaddocks}</div><div class="label">Marker betade i år</div></div>
       <div class="stat"><div class="value">${state.herds.length}</div><div class="label">Djurgrupper</div></div>
+      <div class="stat"><div class="value">${state.moves.reduce((s, m) => s + moveAnimalDays(m), 0)}</div><div class="label">Djurdagar totalt</div></div>
     </div>
     <div class="card">
       <h2>Flyttar per månad</h2>
@@ -1602,7 +1608,7 @@ function renderStats() {
       <h2>Detaljer per betesmark</h2>
       ${state.paddocks.length ? `
         <table>
-          <thead><tr><th>Mark</th><th class="num">Antal beten</th><th class="num">Flyttar inom</th><th class="num">Snitt yta (ha)</th><th>Snitt vila</th><th class="num">Betade dagar</th></tr></thead>
+          <thead><tr><th>Mark</th><th class="num">Antal beten</th><th class="num">Flyttar inom</th><th class="num">Snitt yta (ha)</th><th>Snitt vila</th><th class="num">Betade dagar</th><th class="num">Djurdagar</th></tr></thead>
           <tbody>${tableRows}</tbody>
         </table>` : '<p class="empty">Inga betesmarker ännu.</p>'}
     </div>`;
