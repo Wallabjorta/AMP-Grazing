@@ -801,6 +801,16 @@ function moveAreaBadge(info) {
     iconSize: [28, 52]
   });
 }
+function herdCount(id) { const h = herdById(id); return h ? (h.count || 0) : 0; }
+function moveAnimalDays(m) {
+  const info = moveAreaRestInfo(m);
+  return info ? info.grazeDays * herdCount(m.herdId) : 0;
+}
+function paddockAnimalDays(paddockId) {
+  return state.moves
+    .filter(m => m.toPaddockId === paddockId)
+    .reduce((sum, m) => sum + moveAnimalDays(m), 0);
+}
 function snapCandidates() {
   const polys = [];
   for (const p of state.paddocks) if (p.boundary && p.boundary.length >= 3) polys.push(p.boundary);
@@ -868,7 +878,7 @@ function renderMap() {
   for (const p of state.paddocks) {
     if (!p.boundary) continue;
     const poly = L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15, interactive: !drawing })
-      .bindPopup("<strong>" + esc(p.name) + "</strong>" + (p.sizeHa != null ? "<br>" + p.sizeHa + " ha" : ""));
+      .bindPopup("<strong>" + esc(p.name) + "</strong>" + (p.sizeHa != null ? "<br>" + p.sizeHa + " ha" : "") + "<br>Djurdagar totalt: " + paddockAnimalDays(p.id));
     if (deleting) {
       poly.on("click", () => {
         if (window.confirm("Ta bort gr\u00e4nsen f\u00f6r " + p.name + "? Marken och dess flyttar finns kvar \u2013 bara kartgr\u00e4nsen och automatiskt r\u00e4knad yta tas bort.")) {
@@ -902,7 +912,7 @@ function renderMap() {
             : " \u00b7 Vila: " + info.restDays + " dag" + (info.restDays === 1 ? "" : "ar") + (info.restOngoing ? " (p\u00e5g\u00e5r)" : ""))
       : "";
     const area = L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: !drawing })
-      .bindPopup(esc(herdName(m.herdId)) + ": " + formatArea(m.sizeHa) + "<br>" + fmtDate(m.date) + (restText ? "<br>" + restText : ""));
+      .bindPopup(esc(herdName(m.herdId)) + ": " + formatArea(m.sizeHa) + "<br>" + fmtDate(m.date) + (restText ? "<br>" + restText : "") + "<br>Djurdagar: " + moveAnimalDays(m));
     if (deleting) {
       area.on("click", () => {
         if (window.confirm("Ta bort flytten " + fmtDate(m.date) + " (" + herdName(m.herdId) + ") och dess yta? Flytten raderas \u00e4ven ur statistiken.")) {
@@ -1714,13 +1724,13 @@ async function buildPrintReport() {
     const mapImg = mapData ? '<img class="pr-map" src="' + mapData + '" alt="">' : '<p class="note">Ingen karta \u2013 marken saknar gr\u00e4ns.</p>';
     const rows = inMoves.map(m => "<tr><td>" + fmtDate(m.date) + "</td><td>" + esc(herdName(m.herdId)) + "</td><td>"
       + (m.fromPaddockId ? esc(paddockName(m.fromPaddockId)) : "\u2013") + " \u2192 " + esc(p.name)
-      + (m.fromPaddockId === p.id ? " (inom marken)" : "") + "</td><td>" + (m.sizeHa != null ? formatArea(m.sizeHa) : "\u2013") + "</td></tr>").join("");
+      + (m.fromPaddockId === p.id ? " (inom marken)" : "") + "</td><td>" + (m.sizeHa != null ? formatArea(m.sizeHa) : "\u2013") + "</td><td>" + moveAnimalDays(m) + "</td></tr>").join("");
     pages.push('<div class="pr-page">' + header
-      + "<h2>" + esc(p.name) + (p.sizeHa != null ? " (" + p.sizeHa + " ha)" : "") + "</h2>"
+      + "<h2>" + esc(p.name) + (p.sizeHa != null ? " (" + p.sizeHa + " ha)" : "") + " \u2013 djurdagar totalt: " + paddockAnimalDays(p.id) + "</h2>"
       + mapImg
       + "<h3>Flyttar</h3>"
       + (inMoves.length
-        ? '<table><tr><th>Datum</th><th>Djurgrupp</th><th>Flytt</th><th>Yta</th></tr>' + rows + "</table>"
+        ? '<table><tr><th>Datum</th><th>Djurgrupp</th><th>Flytt</th><th>Yta</th><th>Djurdagar</th></tr>' + rows + "</table>"
         : '<p>Inga flyttar registrerade \u00e4n.</p>')
       + "</div>");
   }
