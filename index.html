@@ -629,7 +629,8 @@ function initMap() {
     if (!dateVal) { document.getElementById("map-msg").textContent = "V\u00e4lj ett datum f\u00f6r flytten."; return; }
     const boundary = moveAreaPoints.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6]);
     const sizeHa = polygonAreaHa(boundary);
-    const from = currentPaddockId(herdId);
+    const from = herdPaddockIdAt(herdId, dateVal, nowTime());
+    const fromStr = from && from !== padId ? " från " + paddockName(from) : "";
     state.moves.push({
       id: uid(),
       herdId,
@@ -643,7 +644,7 @@ function initMap() {
     });
     save();
     endMoveAreaMode();
-    document.getElementById("map-msg").textContent = "Flytt sparad: " + herdName(herdId) + " f\u00e5tt " + sizeHa + " ha p\u00e5 " + paddockName(padId) + ".";
+    document.getElementById("map-msg").textContent = "Flytt sparad: " + herdName(herdId) + " f\u00e5tt " + sizeHa + " ha p\u00e5 " + paddockName(padId) + fromStr + ".";
     render();
   });
   document.getElementById("locate-btn").addEventListener("click", locateMe);
@@ -1078,6 +1079,34 @@ function currentArrival(herdId) {
   return ms.length ? ms[ms.length - 1] : null;
 }
 
+function herdPaddockIdAt(herdId, date, time) {
+  const key = (date || "") + "T" + (time || "00:00");
+  let cur = null;
+  for (const m of movesForHerd(herdId)) {
+    if ((m.date + "T" + (m.time || "00:00")) <= key) cur = m.toPaddockId;
+  }
+  return cur;
+}
+
+function repairInternalMoves() {
+  let fixed = 0;
+  const byHerd = {};
+  for (const m of [...state.moves].sort(compareMove)) {
+    (byHerd[m.herdId] = byHerd[m.herdId] || []).push(m);
+  }
+  for (const moves of Object.values(byHerd)) {
+    let prev = null;
+    for (const m of moves) {
+      if (m.fromPaddockId === m.toPaddockId) {
+        const expected = prev ? prev.toPaddockId : null;
+        if (m.fromPaddockId !== expected) { m.fromPaddockId = expected; fixed++; }
+      }
+      prev = m;
+    }
+  }
+  return fixed;
+}
+
 function daysBetween(startIso, endIso) {
   const d1 = new Date(startIso + "T00:00:00");
   const d2 = new Date(endIso + "T00:00:00");
@@ -1286,7 +1315,7 @@ function renderMoves() {
             <input type="date" name="date" value="${m.date}" required>
           </label>
           <label>Flyttar fr\u00e5n
-            <select name="from">${state.paddocks.map(p => `<option value="${p.id}" ${p.id === m.fromPaddockId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
+            <select name="from"><option value="" ${!m.fromPaddockId ? "selected" : ""}>\u2013 ingen \u2013</option>${state.paddocks.map(p => `<option value="${p.id}" ${p.id === m.fromPaddockId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
           </label>
           <label>Flyttar till
             <select name="to" required>${state.paddocks.map(p => `<option value="${p.id}" ${p.id === m.toPaddockId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
@@ -1752,6 +1781,7 @@ function renderData() {
       <p>
         <button class="primary" data-action="export">Exportera backup (JSON)</button>
         <button class="primary" data-action="export-pdf">Exportera rapport (PDF)</button>
+        <button class="secondary" data-action="repair-moves">Reparera flyttar inom marken</button>
       </p>
       <p>
         <label style="flex-direction:row; align-items:center; gap:8px;">
@@ -1844,6 +1874,17 @@ document.addEventListener("click", e => {
       save();
       render();
       showTab("moves");
+    }
+    return;
+  }
+  if (action === "repair-moves") {
+    const fixed = repairInternalMoves();
+    if (fixed) {
+      save();
+      render();
+      alert("R\u00e4ttade " + fixed + " flytt" + (fixed === 1 ? "" : "ar") + ": fr\u00e5n-marken \u00e4r nu den mark gruppen faktiskt stod i enligt tidigare flytt.");
+    } else {
+      alert("Inga felaktiga flyttar inom marken hittades.");
     }
     return;
   }

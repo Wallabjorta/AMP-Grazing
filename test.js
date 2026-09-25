@@ -37,9 +37,9 @@ const testState = {
 };
 
 const helpers = [
-  "emptyState", "compareMove", "movesForHerd", "currentPaddockId", "currentArrival",
+  "emptyState", "compareMove", "movesForHerd", "currentPaddockId", "currentArrival", "herdPaddockIdAt",
   "daysBetween", "todayIso", "nowTime", "fmtDate", "arrivalsTo", "departuresFrom",
-  "grazeDaysForPaddock", "avgRestDays", "movesPerMonth", "internalMovesIn"
+  "grazeDaysForPaddock", "avgRestDays", "movesPerMonth", "internalMovesIn", "repairInternalMoves"
 ].map(extractFn).join("\n");
 
 const tests = `
@@ -58,6 +58,18 @@ console.assert(arrivalsTo("a").length === 2, "arrivals to A should be 2 (interna
 console.assert(internalMovesIn("a").length === 2, "internal moves in A should be 2");
 console.assert(internalMovesIn("b").length === 0, "internal moves in B should be 0");
 console.assert(movesPerMonth().length === 12, "movesPerMonth should cover 12 months");
+console.assert(herdPaddockIdAt("h1", "2024-05-22", "08:00") === "a", "herd should be in A on 05-22");
+console.assert(herdPaddockIdAt("h1", "2024-05-23", "08:00") === "a", "herd should be in A on 05-23 after internal move");
+console.assert(herdPaddockIdAt("h1", "2024-05-02", "08:00") === "a", "herd should be in A on 05-02");
+console.assert(herdPaddockIdAt("h1", "2024-04-30", "08:00") === null, "herd had no paddock before first move");
+state.moves.push({ id: "m6", herdId: "h1", fromPaddockId: "b", toPaddockId: "b", date: "2024-05-29", time: "08:00", sizeHa: null });
+var fixed = repairInternalMoves();
+console.assert(fixed === 1, "repair should fix 1 move (herd was in A, not B)");
+var m6 = state.moves.find(function(m){ return m.id === "m6"; });
+console.assert(m6.fromPaddockId === "a", "repaired move should have from = a");
+console.assert(repairInternalMoves() === 0, "second repair run should fix nothing");
+state.moves.push({ id: "m7", herdId: "h1", fromPaddockId: "a", toPaddockId: "a", date: "2024-05-27", time: "08:00", sizeHa: null });
+console.assert(repairInternalMoves() === 0, "genuine internal move (herd in A) should not be changed");
 console.log("ALL LOGIC TESTS PASSED");
 })();
 `;
