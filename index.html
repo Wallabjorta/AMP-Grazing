@@ -169,6 +169,9 @@ td.num { text-align: center; }
 .hbar-wrap { display: grid; grid-template-columns: minmax(100px, 180px) 1fr 36px; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 0.88rem; }
 .hbar { background: var(--green); border-radius: 4px; min-width: 2px; height: 18px; }
 .note { color: var(--muted); font-size: 0.85rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: end; }
+.grid .span { grid-column: 1 / -1; }
+.grid hr { grid-column: 1 / -1; }
 #map-canvas { height: 65vh; min-height: 350px; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 12px; }
 #print-report { display: none; }
 #print-report .pr-page { page-break-after: always; }
@@ -181,7 +184,7 @@ td.num { text-align: center; }
 @media print {
   @page { size: A4 portrait; margin: 12mm; }
   body { background: #fff; }
-  #auth-screen, #app > nav, #user-bar, footer, #data, #overview, #moves, #paddocks, #herds, #stats, #map { display: none !important; }
+  #auth-screen, #app > nav, #user-bar, footer, #data, #overview, #moves, #paddocks, #herds, #stats, #map, #tillsyn { display: none !important; }
   #app { display: block !important; }
   #print-report { display: block !important; }
   #print-report .pr-page { page-break-after: always; }
@@ -236,6 +239,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
     <button data-tab="herds">Djurgrupper</button>
     <button data-tab="stats">Statistik</button>
     <button data-tab="map">Karta</button>
+    <button data-tab="tillsyn">Tillsyn</button>
     <button data-tab="data">Data</button>
   </nav>
 </header>
@@ -251,6 +255,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
   <section id="paddocks"></section>
   <section id="herds"></section>
   <section id="stats"></section>
+  <section id="tillsyn"></section>
   <section id="map">
     <div class="card">
       <h2>Karta över betesmarker</h2>
@@ -315,7 +320,7 @@ let currentUser = null;
 const STORAGE_KEY = "amp-grazing-v1";
 
 function emptyState() {
-  return { paddocks: [], herds: [], moves: [] };
+  return { paddocks: [], herds: [], moves: [], tillsyner: [] };
 }
 
 function loadLocalState() {
@@ -324,6 +329,7 @@ function loadLocalState() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.paddocks) && Array.isArray(parsed.herds) && Array.isArray(parsed.moves)) {
+        parsed.tillsyner = Array.isArray(parsed.tillsyner) ? parsed.tillsyner : [];
         return parsed;
       }
     }
@@ -395,7 +401,8 @@ async function persistUserState() {
     await setDoc(doc(db, "farms", currentUser.uid), {
       paddocks: paddocksForCloud(state.paddocks),
       herds: state.herds,
-      moves: movesForCloud(state.moves)
+      moves: movesForCloud(state.moves),
+      tillsyner: Array.isArray(state.tillsyner) ? state.tillsyner : []
     });
     setSaveStatus("Sparat i molnet ✓", false);
   } catch (err) {
@@ -435,6 +442,7 @@ async function loadUserState(uid) {
     if (Array.isArray(data.paddocks) && Array.isArray(data.herds) && Array.isArray(data.moves)) {
       data.paddocks = normalizePaddocks(data.paddocks);
       data.moves = normalizeMoves(data.moves);
+      data.tillsyner = Array.isArray(data.tillsyner) ? data.tillsyner : [];
       return data;
     }
   }
@@ -1771,6 +1779,89 @@ async function buildPrintReport() {
   }
   el.innerHTML = pages.join("") || header + "<p>Inga betesmarker registrerade.</p>";
 }
+function renderTillsyn() {
+  const el = document.getElementById("tillsyn");
+  const list = (state.tillsyner || []).slice().sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")));
+  const rows = list.map(t => `
+      <tr>
+        <td>${esc(fmtDate(t.date))}</td>
+        <td>${esc(t.time || "–")}</td>
+        <td>${esc(herdName(t.herdId))}</td>
+        <td>${esc(paddockName(t.paddockId))}</td>
+        <td>${esc(t.comment || "Tillsyn är gjort")}</td>
+        <td>
+          <button class="ghost small" data-action="edit-tillsyn" data-id="${t.id}">Redigera</button>
+          <button class="danger small" data-action="del-tillsyn" data-id="${t.id}">Ta bort</button>
+        </td>
+      </tr>`).join("");
+  const herdOpts = [`<option value="">– alla grupper –</option>`].concat(
+    state.herds.map(h => `<option value="${h.id}">${esc(h.name)}</option>`)
+  ).join("");
+  const paddockOpts = [`<option value="">– alla marker –</option>`].concat(
+    state.paddocks.map(p => `<option value="${p.id}">${esc(p.name)}</option>`)
+  ).join("");
+  const editId = el.dataset.editId || "";
+  const editing = list.find(t => t.id === editId) || null;
+  const formHtml = editing ? `
+      <form data-action="save-tillsyn" data-id="${editing.id}" class="grid">
+        <label>Datum *<input type="date" name="date" value="${esc(editing.date)}" required></label>
+        <label>Tid<input type="time" name="time" value="${esc(editing.time || "")}"></label>
+        <label>Djurgrupp<select name="herdId">${herdOpts}</select></label>
+        <label>Betesmark<select name="paddockId">${paddockOpts}</select></label>
+        <label class="span">Kommentar<input type="text" name="comment" value="${esc(editing.comment || "Tillsyn är gjort")}" placeholder="Tillsyn är gjort"></label>
+        <div class="span" style="display:flex; gap:8px">
+          <button type="submit" class="primary small">Spara</button>
+          <button type="button" class="ghost small" data-action="cancel-edit-tillsyn">Avbryt</button>
+        </div>
+      </form>` : `
+      <form data-action="add-tillsyn" class="grid">
+        <label>Datum *<input type="date" name="date" value="${todayIso()}" required></label>
+        <label>Tid<input type="time" name="time" value="${nowTime()}"></label>
+        <label>Djurgrupp<select name="herdId">${herdOpts}</select></label>
+        <label>Betesmark<select name="paddockId">${paddockOpts}</select></label>
+        <label class="span">Kommentar<input type="text" name="comment" value="Tillsyn är gjort"></label>
+        <div class="span"><button type="submit" class="primary">Registrera tillsyn</button></div>
+      </form>
+      <hr>
+      <h3>Bulkregistrering</h3>
+      <form data-action="add-tillsyn-bulk" class="grid">
+        <label class="span">Från datum *<input type="date" name="from" value="${todayIso()}" required></label>
+        <label class="span">Till datum *<input type="date" name="to" value="${todayIso()}" required></label>
+        <label class="span">Kommentar per dag<input type="text" name="comment" value="Tillsyn är gjort"></label>
+        <div class="span"><button type="submit" class="secondary">Registrera en tillsyn per dag</button></div>
+      </form>`;
+  el.innerHTML = `
+    <div class="card">
+      <h2>Tillsyn</h2>
+      <p>Registrera att tillsyn är gjord – med dagens datum, eventuell djurgrupp/betesmark och en kommentar.</p>
+      ${formHtml}
+    </div>
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap">
+        <h2>Registrerade tillsyner (${list.length})</h2>
+        <button class="primary" data-action="export-tillsyn-excel">Exportera till Excel</button>
+      </div>
+      ${list.length ? `<table><thead><tr><th>Datum</th><th>Tid</th><th>Djurgrupp</th><th>Betesmark</th><th>Kommentar</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<p>Inga tillsyner registrerade ännu.</p>`}
+    </div>`;
+  if (editing) {
+    const form = el.querySelector(`form[data-action="save-tillsyn"]`);
+    if (form) {
+      form.querySelector('select[name="herdId"]').value = editing.herdId || "";
+      form.querySelector('select[name="paddockId"]').value = editing.paddockId || "";
+    }
+  }
+}
+
+function tillsynToCsv() {
+  const list = (state.tillsyner || []).slice().sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+  const q = s => `"${String(s ?? "").replace(/"/g, '""')}"`;
+  const lines = ["Datum;Tid;Djurgrupp;Betesmark;Kommentar"];
+  for (const t of list) {
+    lines.push([t.date, t.time || "", q(herdName(t.herdId)), q(paddockName(t.paddockId)), q(t.comment || "")].join(";"));
+  }
+  return "\uFEFF" + lines.join("\r\n");
+}
+
 function renderData() {
   const el = document.getElementById("data");
   const count = state.paddocks.length + state.herds.length + state.moves.length;
@@ -1828,6 +1919,7 @@ function render() {
   renderPaddocks();
   renderHerds();
   renderStats();
+  renderTillsyn();
   renderData();
 }
 
@@ -1950,6 +2042,34 @@ document.addEventListener("click", e => {
     window.print();
     return;
   }
+  if (action === "export-tillsyn-excel") {
+    const blob = new Blob([tillsynToCsv()], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "tillsyn-" + todayIso() + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
+    return;
+  }
+  if (action === "edit-tillsyn") {
+    document.getElementById("tillsyn").dataset.editId = btn.dataset.id;
+    renderTillsyn();
+    return;
+  }
+  if (action === "cancel-edit-tillsyn") {
+    delete document.getElementById("tillsyn").dataset.editId;
+    renderTillsyn();
+    return;
+  }
+  if (action === "del-tillsyn") {
+    if (confirm("Ta bort denna tillsyn?")) {
+      state.tillsyner = (state.tillsyner || []).filter(t => t.id !== btn.dataset.id);
+      save();
+      renderTillsyn();
+    }
+    return;
+  }
   if (action === "wipe") {
     if (confirm("Radera ALL data (betesmarker, djurgrupper och flyttar)? Detta kan inte ångras.")) {
       state = emptyState();
@@ -1965,6 +2085,69 @@ document.addEventListener("submit", e => {
   if (!form) return;
   const action = form.dataset.action;
   const id = form.dataset.id;
+  if (action === "add-tillsyn") {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const date = fd.get("date");
+    if (!date) return;
+    state.tillsyner = state.tillsyner || [];
+    state.tillsyner.push({
+      id: uid(),
+      date,
+      time: fd.get("time") || "",
+      herdId: fd.get("herdId") || null,
+      paddockId: fd.get("paddockId") || null,
+      comment: (fd.get("comment") || "").trim() || "Tillsyn är gjort"
+    });
+    save();
+    renderTillsyn();
+    return;
+  }
+  if (action === "add-tillsyn-bulk") {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const from = fd.get("from");
+    const to = fd.get("to");
+    if (!from || !to) return;
+    if (from > to) {
+      alert("\"Från datum\" måste vara samma eller tidigare än \"Till datum\".");
+      return;
+    }
+    const comment = (fd.get("comment") || "").trim() || "Tillsyn är gjort";
+    state.tillsyner = state.tillsyner || [];
+    let d = from;
+    let count = 0;
+    while (d <= to) {
+      state.tillsyner.push({ id: uid(), date: d, time: "", herdId: null, paddockId: null, comment });
+      count++;
+      const parts = d.split("-");
+      const dt = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+      dt.setDate(dt.getDate() + 1);
+      const pad = n => String(n).padStart(2, "0");
+      d = dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate());
+    }
+    save();
+    renderTillsyn();
+    alert(count + " tillsyn(er) registrerade (en per dag).");
+    return;
+  }
+  if (action === "save-tillsyn") {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const t = (state.tillsyner || []).find(x => x.id === id);
+    if (!t) return;
+    const date = fd.get("date");
+    if (!date) return;
+    t.date = date;
+    t.time = fd.get("time") || "";
+    t.herdId = fd.get("herdId") || null;
+    t.paddockId = fd.get("paddockId") || null;
+    t.comment = (fd.get("comment") || "").trim() || "Tillsyn är gjort";
+    delete document.getElementById("tillsyn").dataset.editId;
+    save();
+    renderTillsyn();
+    return;
+  }
   if (action === "save-move") {
     e.preventDefault();
     const fd = new FormData(form);
