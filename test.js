@@ -36,15 +36,22 @@ const testState = {
   ],
 };
 
+const stubs = `
+function herdName(id) { var h = state.herds.find(function(x){ return x.id === id; }); return h ? h.name : "–"; }
+function paddockName(id) { var p = state.paddocks.find(function(x){ return x.id === id; }); return p ? p.name : "–"; }
+`;
+
 const helpers = [
   "emptyState", "compareMove", "movesForHerd", "currentPaddockId", "currentArrival", "herdPaddockIdAt",
   "daysBetween", "todayIso", "nowTime", "fmtDate", "arrivalsTo", "departuresFrom",
-  "grazeDaysForPaddock", "avgRestDays", "movesPerMonth", "internalMovesIn", "repairInternalMoves"
+  "grazeDaysForPaddock", "avgRestDays", "movesPerMonth", "internalMovesIn", "repairInternalMoves",
+  "tillsynToCsv"
 ].map(extractFn).join("\n");
 
 const tests = `
 var state = ${JSON.stringify(testState)};
 (function(){
+${stubs}
 ${helpers}
 
 var ms = movesForHerd("h1");
@@ -70,6 +77,16 @@ console.assert(m6.fromPaddockId === "a", "repaired move should have from = a");
 console.assert(repairInternalMoves() === 0, "second repair run should fix nothing");
 state.moves.push({ id: "m7", herdId: "h1", fromPaddockId: "a", toPaddockId: "a", date: "2024-05-27", time: "08:00", sizeHa: null });
 console.assert(repairInternalMoves() === 0, "genuine internal move (herd in A) should not be changed");
+state.tillsyner = [
+  { id: "t2", date: "2024-05-03", time: "09:00", herdId: "h1", paddockId: "b", comment: "Tillsyn är gjort" },
+  { id: "t1", date: "2024-05-02", time: "", herdId: null, paddockId: null, comment: "Tillsyn är gjort" },
+];
+var csv = tillsynToCsv();
+if (csv.charCodeAt(0) === 0xFEFF) csv = csv.slice(1);
+var csvLines = csv.split("\\r\\n");
+console.assert(csvLines[0] === "Datum;Tid;Djurgrupp;Betesmark;Kommentar", "csv header should match");
+console.assert(csvLines[1].startsWith("2024-05-02;"), "csv rows should be sorted by date");
+console.assert(csvLines[2].includes("Kor") && csvLines[2].includes("B"), "csv should include herd and paddock names");
 console.log("ALL LOGIC TESTS PASSED");
 })();
 `;
