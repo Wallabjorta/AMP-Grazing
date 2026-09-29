@@ -1936,8 +1936,9 @@ function renderInkop() {
           <input type="file" id="inkop-photo" accept="image/*">
         </label>
         <p class="note" id="inkop-ai-result"></p>
-        <label class="span">Gemini API-nyckel (spara lokalt för AI-analys)
+        <label class="span">Gemini API-nyckel (sparas automatiskt första gången – sedan behövs den inte mer)
           <input type="password" id="inkop-gemini-key" placeholder="Klistra in din Gemini API-nyckel" value="${esc(localStorage.getItem("amp-gemini-key") || "")}">
+          <span class="note" id="inkop-key-status">${localStorage.getItem("amp-gemini-key") ? "Nyckeln är sparad i webbläsaren – du behöver inte klistra in den igen." : ""}</span>
         </label>
         <div class="span"><button type="submit" class="primary">Spara inköpskontroll</button></div>
       </form>
@@ -2047,6 +2048,18 @@ function showTab(tab) {
 }
 
 document.addEventListener("change", e => {
+  if (e.target && e.target.id === "inkop-gemini-key") {
+    const val = (e.target.value || "").trim();
+    const status = document.getElementById("inkop-key-status");
+    if (val) {
+      localStorage.setItem("amp-gemini-key", val);
+      if (status) status.textContent = "Nyckeln är sparad i webbläsaren – du behöver inte klistra in den igen.";
+    } else {
+      localStorage.removeItem("amp-gemini-key");
+      if (status) status.textContent = "";
+    }
+    return;
+  }
   if (e.target && e.target.id === "inkop-photo") {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
