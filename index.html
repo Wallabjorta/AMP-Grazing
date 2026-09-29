@@ -184,7 +184,7 @@ td.num { text-align: center; }
 @media print {
   @page { size: A4 portrait; margin: 12mm; }
   body { background: #fff; }
-  #auth-screen, #app > nav, #user-bar, footer, #data, #overview, #moves, #paddocks, #herds, #stats, #map, #tillsyn { display: none !important; }
+  #auth-screen, #app > nav, #user-bar, footer, #data, #overview, #moves, #paddocks, #herds, #stats, #map, #tillsyn, #inkop { display: none !important; }
   #app { display: block !important; }
   #print-report { display: block !important; }
   #print-report .pr-page { page-break-after: always; }
@@ -240,6 +240,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
     <button data-tab="stats">Statistik</button>
     <button data-tab="map">Karta</button>
     <button data-tab="tillsyn">Tillsyn</button>
+    <button data-tab="inkop">Inköpskontroll</button>
     <button data-tab="data">Data</button>
   </nav>
 </header>
@@ -256,6 +257,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
   <section id="herds"></section>
   <section id="stats"></section>
   <section id="tillsyn"></section>
+  <section id="inkop"></section>
   <section id="map">
     <div class="card">
       <h2>Karta över betesmarker</h2>
@@ -320,7 +322,7 @@ let currentUser = null;
 const STORAGE_KEY = "amp-grazing-v1";
 
 function emptyState() {
-  return { paddocks: [], herds: [], moves: [], tillsyner: [] };
+  return { paddocks: [], herds: [], moves: [], tillsyner: [], inkop: [] };
 }
 
 function loadLocalState() {
@@ -330,6 +332,7 @@ function loadLocalState() {
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.paddocks) && Array.isArray(parsed.herds) && Array.isArray(parsed.moves)) {
         parsed.tillsyner = Array.isArray(parsed.tillsyner) ? parsed.tillsyner : [];
+        parsed.inkop = Array.isArray(parsed.inkop) ? parsed.inkop : [];
         return parsed;
       }
     }
@@ -402,7 +405,8 @@ async function persistUserState() {
       paddocks: paddocksForCloud(state.paddocks),
       herds: state.herds,
       moves: movesForCloud(state.moves),
-      tillsyner: Array.isArray(state.tillsyner) ? state.tillsyner : []
+      tillsyner: Array.isArray(state.tillsyner) ? state.tillsyner : [],
+      inkop: Array.isArray(state.inkop) ? state.inkop : []
     });
     setSaveStatus("Sparat i molnet ✓", false);
   } catch (err) {
@@ -443,6 +447,7 @@ async function loadUserState(uid) {
       data.paddocks = normalizePaddocks(data.paddocks);
       data.moves = normalizeMoves(data.moves);
       data.tillsyner = Array.isArray(data.tillsyner) ? data.tillsyner : [];
+      data.inkop = Array.isArray(data.inkop) ? data.inkop : [];
       return data;
     }
   }
@@ -1862,6 +1867,115 @@ function tillsynToCsv() {
   return "\uFEFF" + lines.join("\r\n");
 }
 
+const DEBIO_STANDARDS = [
+  { id: "omerke", label: "Ø-merket (Debios grønne Ø) syns på förpackningen", hint: "Ecological products in Norway must carry Debios Ø-merke" },
+  { id: "debio", label: "Debio-godkännande: producent/virksomhet är listad på Finn øko", hint: "Check the producer at finnoko.debio.no" },
+  { id: "eu", label: "EU:s ekologiska logotyp (grönt blad) – krävs för importvaror", hint: "Imported organic products must carry the EU organic leaf logo" },
+  { id: "sporbar", label: "Spårbarhet: kontrollkods/produktionsplats anges på etiketten", hint: "Organic labels must include traceability code of the control body" },
+ { id: "ingredienser", label: "Innehåll: inga tillsatser som ej är tillåtna i ekologisk produktion", hint: "Organic products cannot contain synthetic additives" }
+];
+
+async function debioSearch(query) {
+  const proxy = "https://api.allorigins.win/raw?url=";
+  const target = "https://finnoko.debio.no/?s=" + encodeURIComponent(query);
+  try {
+    const res = await fetch(proxy + encodeURIComponent(target));
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const html = await res.text();
+    const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    if (text.includes(query) || /antall godkjente virksomheter/i.test(text)) {
+      return { ok: true, text: text.slice(0, 2000) };
+    }
+    return { ok: false, error: "Ingen träff i Finn øko-svaret" };
+  } catch (err) {
+    return { ok: false, error: "Kunde inte nå Finn øko via proxy: " + String(err && err.message || err) };
+  }
+}
+
+function renderInkop() {
+  const el = document.getElementById("inkop");
+  const list = (state.inkop || []).slice().sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")));
+  const checks = DEBIO_STANDARDS.map(s => `
+        <label style="flex-direction:row; align-items:center; gap:8px">
+          <input type="checkbox" name="chk_${s.id}" checked>
+          <span>${esc(s.label)}</span>
+        </label>`).join("");
+  const rows = list.map(k => {
+    const ok = DEBIO_STANDARDS.every(s => k.checks && k.checks[s.id]);
+    return `
+      <tr>
+        <td>${esc(fmtDate(k.date))}</td>
+        <td>${esc(k.varu)}</td>
+        <td>${esc(k.producent || "–")}</td>
+        <td>${ok ? "<span style=\"color:var(--green);font-weight:600\">Godkänd\" : "<span style=\"color:var(--danger);font-weight:600\">Ej godkänd"}</span></td>
+        <td>${k.aiResult ? esc(k.aiResult) : "–"}</td>
+        <td>${k.photo ? `<img src="${k.photo}" style="max-width:60px;max-height:60px;object-fit:cover;border-radius:4px">` : "–"}</td>
+        <td>
+          <button class="danger small" data-action="del-inkop" data-id="${k.id}">Ta bort</button>
+        </td>
+      </tr>`;
+  }).join("");
+  el.innerHTML = `
+    <div class="card">
+      <h2>Inköpskontroll – ekologiska varor</h2>
+      <p>Kontrollera varan mot Debios krav. Sök upp producenten live på <a href="https://finnoko.debio.no/" target="_blank" rel="noopener">Finn øko</a>.</p>
+      <form data-action="add-inkop" class="grid" enctype="multipart/form-data">
+        <label>Datum *<input type="date" name="date" value="${todayIso()}" required></label>
+        <label>Vara *<input type="text" name="varu" placeholder="t.ex. Ekologisk mjölk" required></label>
+        <label>Producent/leverantör<input type="text" name="producent" placeholder="t.ex. Tine"></label>
+        <label class="span">Kontroller mot Debios standarder:</label>
+        ${checks}
+        <label class="span">Sök producent på Finn øko (live)
+          <div style="display:flex; gap:8px">
+            <input type="text" id="inkop-debio-search" placeholder="Producentnamn" style="flex:1">
+            <button type="button" class="secondary" data-action="debio-search">Sök på Finn øko</button>
+          </div>
+          <p class="note" id="inkop-debio-result"></p>
+        </label>
+        <label class="span">Ta ett kort av varan/etiketten (valfritt, AI-analys med Gemini)
+          <input type="file" id="inkop-photo" accept="image/*" capture="environment">
+        </label>
+        <p class="note" id="inkop-ai-result"></p>
+        <label class="span">Gemini API-nyckel (spara lokalt för AI-analys)
+          <input type="password" id="inkop-gemini-key" placeholder="Klistra in din Gemini API-nyckel" value="${esc(localStorage.getItem("amp-gemini-key") || "")}">
+        </label>
+        <div class="span"><button type="submit" class="primary">Spara inköpskontroll</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Genomförda kontroller (${list.length})</h2>
+      ${list.length ? `<table><thead><tr><th>Datum</th><th>Vara</th><th>Producent</th><th>Status</th><th>AI-analys</th><th>Foto</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<p>Inga kontroller registrerade ännu.</p>`}
+    </div>`;
+}
+
+async function analyzePhotoWithGemini(dataUrl) {
+  const key = (localStorage.getItem("amp-gemini-key") || "").trim();
+  if (!key) return { ok: false, error: "Ingen Gemini API-nyckel angiven." };
+  const m = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+  if (!m) return { ok: false, error: "Ogiltigt bildformat." };
+  const body = {
+    contents: [{
+      parts: [
+        { inline_data: { mime_type: m[1], data: m[2] } },
+        { text: "Detta är ett foto av en matvaras etikett. Analysera: 1) Finns det något ekologiskt märke (Debios Ø-merke, EU-ekologiskt blad, Demeter)? 2) Vilket är varumärket/producenten om det syns? 3) Finns en kontrollkod/spårbarhetskod? Svara kortfattat på svenska, max 5 meningar." }
+      ]
+    }]
+  };
+  try {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + encodeURIComponent(key), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) return { ok: false, error: "Gemini-fel: " + (data.error && data.error.message || res.status) };
+    const text = data.candidates && data.candidates[0] && data.candidates[0].content.parts.map(p => p.text).join("") || "";
+    return { ok: true, text: text.trim() };
+  } catch (err) {
+    return { ok: false, error: "Kunde inte ansluta till Gemini: " + String(err && err.message || err) };
+  }
+}
+
 function renderData() {
   const el = document.getElementById("data");
   const count = state.paddocks.length + state.herds.length + state.moves.length;
@@ -1920,6 +2034,7 @@ function render() {
   renderHerds();
   renderStats();
   renderTillsyn();
+  renderInkop();
   renderData();
 }
 
@@ -1930,6 +2045,41 @@ function showTab(tab) {
     setTimeout(() => mapInstance.invalidateSize(), 50);
   }
 }
+
+document.addEventListener("change", e => {
+  if (e.target && e.target.id === "inkop-photo") {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const form = e.target.closest("form");
+    const aiOut = document.getElementById("inkop-ai-result");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxSide = 1024;
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+        form.dataset.photo = dataUrl;
+        aiOut.textContent = "Analyserar bilden med Gemini…";
+        analyzePhotoWithGemini(dataUrl).then(r => {
+          if (r.ok) {
+            form.dataset.aiResult = r.text;
+            aiOut.innerHTML = `<span style="color:var(--green);font-weight:600">AI-analys:</span> ${esc(r.text)}`;
+          } else {
+            delete form.dataset.aiResult;
+            aiOut.innerHTML = `<span style="color:var(--danger)\">${esc(r.error)}</span> Fotot sparas ändå med kontrollen.`;
+          }
+        });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+});
 
 document.getElementById("nav").addEventListener("click", e => {
   const btn = e.target.closest("button[data-tab]");
@@ -2070,6 +2220,35 @@ document.addEventListener("click", e => {
     }
     return;
   }
+  if (action === "del-inkop") {
+    if (confirm("Ta bort denna inköpskontroll?")) {
+      state.inkop = (state.inkop || []).filter(k => k.id !== btn.dataset.id);
+      save();
+      renderInkop();
+    }
+    return;
+  }
+  if (action === "debio-search") {
+    const q = (document.getElementById("inkop-debio-search").value || "").trim();
+    const out = document.getElementById("inkop-debio-result");
+    if (!q) {
+      out.textContent = "Skriv ett producentnamn att söka på.";
+      return;
+    }
+    out.textContent = "Söker på Finn øko…";
+    debioSearch(q).then(r => {
+      if (r.ok) {
+        const found = r.text.toLowerCase().includes(q.toLowerCase());
+        out.innerHTML = found
+          ? "<span style=\"color:var(--green);font-weight:600\">✓ Träff i Finn øko-svaret – kontrollera manuellt: "
+          : "<span style=\"color:var(--danger);font-weight:600\">Ingen direkt träff – kontrollera manuellt: ";
+        out.innerHTML += `<a href="https://finnoko.debio.no/?s=${encodeURIComponent(q)}" target="_blank" rel="noopener">finnoko.debio.no</a>`;
+      } else {
+        out.innerHTML = `<span style="color:var(--danger)\">${esc(r.error)}</span> – kontrollera manuellt: <a href="https://finnoko.debio.no/?s=${encodeURIComponent(q)}" target="_blank" rel="noopener">finnoko.debio.no</a>`;
+      }
+    });
+    return;
+  }
   if (action === "wipe") {
     if (confirm("Radera ALL data (betesmarker, djurgrupper och flyttar)? Detta kan inte ångras.")) {
       state = emptyState();
@@ -2146,6 +2325,33 @@ document.addEventListener("submit", e => {
     delete document.getElementById("tillsyn").dataset.editId;
     save();
     renderTillsyn();
+    return;
+  }
+  if (action === "add-inkop") {
+    e.preventDefault();
+    const form = e.target;
+    const fd = new FormData(form);
+    const date = fd.get("date");
+    const varu = (fd.get("varu") || "").trim();
+    if (!date || !varu) return;
+    const checks = {};
+    for (const s of DEBIO_STANDARDS) checks[s.id] = !!fd.get("chk_" + s.id);
+    const keyInput = document.getElementById("inkop-gemini-key");
+    if (keyInput && keyInput.value.trim()) localStorage.setItem("amp-gemini-key", keyInput.value.trim());
+    state.inkop = state.inkop || [];
+    const entry = {
+      id: uid(),
+      date,
+      time: nowTime(),
+      varu,
+      producent: (fd.get("producent") || "").trim(),
+      checks,
+      aiResult: form.dataset.aiResult || null,
+      photo: form.dataset.photo || null
+    };
+    state.inkop.push(entry);
+    save();
+    renderInkop();
     return;
   }
   if (action === "save-move") {
