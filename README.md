@@ -29,6 +29,7 @@ Appen fungerar bra på mobil och surfplatta.
   hektaren beräknas automatiskt; markernas flyttar visas som streckade linjer mellan
   områdena och djurgruppernas aktuella position markeras. Gränser kan också ritas
   manuellt direkt på kartan.
+- **Inköpskontroll** – kontrollera ekologiska varor mot Debios standarder (Ø-merket, EU-ekologiskt blad, spårbarhet med mera) via en checklista. Sök producenten live mot [Finn øko](https://finnoko.debio.no/) (via öppen CORS-proxy, med direktlänk som fallback) och ta ett foto av etiketten som analyseras av AI (Google Gemini, kräver egen API-nyckel som sparas lokalt i webbläsaren).
 - **Data** – export/import av backup (JSON) samt möjlighet att radera all data.
 
 ## Teknik
