@@ -1997,9 +1997,6 @@ async function analyzePhotoWithGemini(dataUrl) {
     }
   }
   return { ok: false, error: "Gemini-fel: ingen tillgänglig modell kunde anropas." };
-  } catch (err) {
-    return { ok: false, error: "Kunde inte ansluta till Gemini: " + String(err && err.message || err) };
-  }
 }
 
 function renderData() {
