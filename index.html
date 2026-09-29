@@ -1907,7 +1907,7 @@ function renderInkop() {
         <td>${esc(fmtDate(k.date))}</td>
         <td>${esc(k.varu)}</td>
         <td>${esc(k.producent || "–")}</td>
-        <td>${ok ? "<span style=\"color:var(--green);font-weight:600\">Godkänd\" : "<span style=\"color:var(--danger);font-weight:600\">Ej godkänd"}</span></td>
+        <td>${ok ? '<span style="color:var(--green);font-weight:600">Godkänd</span>' : '<span style="color:var(--danger);font-weight:600">Ej godkänd</span>'}</td>
         <td>${k.aiResult ? esc(k.aiResult) : "–"}</td>
         <td>${k.photo ? `<img src="${k.photo}" style="max-width:60px;max-height:60px;object-fit:cover;border-radius:4px">` : "–"}</td>
         <td>
@@ -2071,7 +2071,7 @@ document.addEventListener("change", e => {
             aiOut.innerHTML = `<span style="color:var(--green);font-weight:600">AI-analys:</span> ${esc(r.text)}`;
           } else {
             delete form.dataset.aiResult;
-            aiOut.innerHTML = `<span style="color:var(--danger)\">${esc(r.error)}</span> Fotot sparas ändå med kontrollen.`;
+            aiOut.innerHTML = `<span style="color:var(--danger)">${esc(r.error)}</span> Fotot sparas ändå med kontrollen.`;
           }
         });
       };
@@ -2240,11 +2240,11 @@ document.addEventListener("click", e => {
       if (r.ok) {
         const found = r.text.toLowerCase().includes(q.toLowerCase());
         out.innerHTML = found
-          ? "<span style=\"color:var(--green);font-weight:600\">✓ Träff i Finn øko-svaret – kontrollera manuellt: "
-          : "<span style=\"color:var(--danger);font-weight:600\">Ingen direkt träff – kontrollera manuellt: ";
+          ? '<span style="color:var(--green);font-weight:600">✓ Träff i Finn øko-svaret – kontrollera manuellt: '
+          : '<span style="color:var(--danger);font-weight:600">Ingen direkt träff – kontrollera manuellt: ';
         out.innerHTML += `<a href="https://finnoko.debio.no/?s=${encodeURIComponent(q)}" target="_blank" rel="noopener">finnoko.debio.no</a>`;
       } else {
-        out.innerHTML = `<span style="color:var(--danger)\">${esc(r.error)}</span> – kontrollera manuellt: <a href="https://finnoko.debio.no/?s=${encodeURIComponent(q)}" target="_blank" rel="noopener">finnoko.debio.no</a>`;
+        out.innerHTML = `<span style="color:var(--danger)">${esc(r.error)}</span> – kontrollera manuellt: <a href="https://finnoko.debio.no/?s=${encodeURIComponent(q)}" target="_blank" rel="noopener">finnoko.debio.no</a>`;
       }
     });
     return;
