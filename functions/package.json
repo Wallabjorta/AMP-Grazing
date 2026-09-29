@@ -1,0 +1,11 @@
+{
+  "name": "amp-grazing-functions",
+  "description": "Server-side photo analysis for AMP Betesflytt",
+  "engines": { "node": "22" },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.0"
+  },
+  "private": true
+}

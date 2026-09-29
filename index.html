@@ -302,6 +302,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-functions.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDEIJCQ_QH4fU0NjOuRUxyimRGrEUfcyOA",
@@ -317,6 +318,7 @@ const useFirebase = typeof firebaseConfig.apiKey === "string" && firebaseConfig.
 const app = useFirebase ? initializeApp(firebaseConfig) : null;
 const auth = useFirebase ? getAuth(app) : null;
 const db = useFirebase ? getFirestore(app) : null;
+const functions = useFirebase ? getFunctions(app) : null;
 let currentUser = null;
 
 const STORAGE_KEY = "amp-grazing-v1";
@@ -1946,11 +1948,11 @@ function renderInkop() {
           </div>
           <p class="note" id="inkop-debio-result"></p>
         </label>
-        <label class="span">Ta ett kort av varan/etiketten (valfritt, AI-analys med Gemini)
+        <label class="span">Ta ett kort av varan/etiketten (valfritt – analyseras automatiskt av AI för alla inloggade)
           <input type="file" id="inkop-photo" accept="image/*">
         </label>
         <p class="note" id="inkop-ai-result"></p>
-        <label class="span">Gemini API-nyckel (sparas automatiskt första gången – sedan behövs den inte mer)
+        <label class="span">Egen Gemini API-nyckel (valfri – behövs inte, AI-analysen fungerar för alla inloggade utan den)
           <input type="password" id="inkop-gemini-key" placeholder="Klistra in din Gemini API-nyckel" value="${esc(geminiKey())}">
           <span class="note" id="inkop-key-status">${geminiKey() ? "Nyckeln är sparad med ditt gårdskonto – den gäller på alla dina enheter." : ""}</span>
         </label>
@@ -1963,9 +1965,29 @@ function renderInkop() {
     </div>`;
 }
 
+async function analyzePhotoOnServer(dataUrl) {
+  if (!useFirebase || !currentUser || !functions) {
+    return { ok: false, error: "AI-analys på servern kräver inloggning." };
+  }
+  const m = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+  if (!m) return { ok: false, error: "Ogiltigt bildformat." };
+  try {
+    const analyze = httpsCallable(functions, "analyzePhoto");
+    const res = await analyze({ imageBase64: m[2], mimeType: m[1] });
+    if (res.data && res.data.ok) return { ok: true, text: res.data.text };
+    return { ok: false, error: "Servern kunde inte analysera bilden." };
+  } catch (err) {
+    const msg = String(err && err.message || err);
+    if (err && (err.code === "unauthenticated" || err.code === "permission-denied")) {
+      return { ok: false, error: "Du måste vara inloggad för AI-analys." };
+    }
+    return { ok: false, error: msg };
+  }
+}
+
 async function analyzePhotoWithGemini(dataUrl) {
   const key = geminiKey();
-  if (!key) return { ok: false, error: "Ingen Gemini API-nyckel angiven." };
+  if (!key) return analyzePhotoOnServer(dataUrl);
   const m = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
   if (!m) return { ok: false, error: "Ogiltigt bildformat." };
   const body = {
