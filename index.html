@@ -265,7 +265,6 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
         <label>Mark
           <select id="map-paddock"><option value="">Välj mark…</option></select>
         </label>
-        <button type="button" id="draw-btn" class="secondary">Rita gräns</button>
         <button type="button" id="draw-save" class="primary" hidden>Spara gräns</button>
         <button type="button" id="draw-cancel" class="ghost" hidden>Avbryt</button>
         <button type="button" id="movearea-btn" class="secondary">Rita flyttyta</button>
@@ -282,13 +281,10 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
           <input type="text" id="place-search" placeholder="t.ex. Fåvang">
         </label>
         <button type="button" id="place-search-btn" class="secondary">Sök</button>
-        <label>Importera GPX
-          <input type="file" id="gpx-file" accept=".gpx,application/gpx+xml">
-        </label>
       </form>
       <p class="note" id="map-msg"></p>
       <div id="map-canvas"></div>
-      <p class="note">Importera ett GPX-spår (t.ex. om du gått eller ridit runt markens område med GPS på) så ritas gränsen automatiskt och markens hektar räknas ut. Har filen flera spår tilldelas de olika marker som saknar gräns. Du kan också rita gränsen själv: välj mark, tryck Rita gräns och klicka ut hörnen på kartan.</p>
+      <p class="note">Importera ett GPX-spår (t.ex. om du gått eller ridit runt markens område med GPS på) så ritas gränsen automatiskt och markens hektar räknas ut. Har filen flera spår tilldelas de olika marker som saknar gräns. Du ritar gränsen själv med plus-knappen bredvid varje mark under fliken Betesmarker.</p>
     </div>
   </section>
   <section id="data"></section>
@@ -570,22 +566,10 @@ function initMap() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(mapInstance);
   mapLayers = L.layerGroup().addTo(mapInstance);
-  document.getElementById("draw-btn").addEventListener("click", () => {
-    const sel = document.getElementById("map-paddock");
-    if (!sel.value) { document.getElementById("map-msg").textContent = "V\u00e4lj en mark f\u00f6rst."; return; }
-    drawMode = true;
-    drawPoints = [];
-    renderMap();
-    document.getElementById("draw-btn").hidden = true;
-    document.getElementById("draw-save").hidden = false;
-    document.getElementById("draw-cancel").hidden = false;
-    document.getElementById("map-msg").textContent = "Klicka ut markens h\u00f6rn p\u00e5 kartan \u2013 punkter n\u00e4ra befintliga gr\u00e4nser snapmar automatiskt (st\u00f6rre snap p\u00e5 mobil). Tryck Spara gr\u00e4ns n\u00e4r du \u00e4r klar.";
-    mapInstance.on("click", e => {
+  mapInstance.on("click", e => {
     if (deleteAreaMode) return;
-    if (!drawMode) return;
-    drawPoints.push(snapPoint(e.latlng));
-    renderDrawPreview();
-  });
+    if (drawMode) { drawPoints.push(snapPoint(e.latlng)); renderDrawPreview(); return; }
+    if (moveAreaMode) { moveAreaPoints.push(snapPoint(e.latlng)); renderMoveAreaPreview(); }
   });
   document.getElementById("draw-cancel").addEventListener("click", () => {
     drawMode = false;
@@ -642,12 +626,6 @@ function initMap() {
     moveAreaPoints = [];
     renderMap();
     document.getElementById("map-msg").textContent = "Rita omr\u00e5det djuren f\u00e5tt: klicka ut h\u00f6rnen \u2013 klick n\u00e4ra en befintlig gr\u00e4ns snapmar automatiskt till den, s\u00e5 att flyttytan passa precis inuti/s ansluten till marken. Tryck Spara flytt n\u00e4r du \u00e4r klar.";
-    mapInstance.on("click", e => {
-    if (deleteAreaMode) return;
-    if (!moveAreaMode) return;
-    moveAreaPoints.push(snapPoint(e.latlng));
-    renderMoveAreaPreview();
-  });
   });
   document.getElementById("movearea-save").addEventListener("click", () => {
     const herdId = document.getElementById("movearea-herd").value;
@@ -680,14 +658,6 @@ function initMap() {
   document.getElementById("place-search-btn").addEventListener("click", searchPlace);
   document.getElementById("place-search").addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); searchPlace(); }
-  });
-  document.getElementById("gpx-file").addEventListener("change", e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => importGpx(reader.result);
-    reader.readAsText(file);
-    e.target.value = "";
   });
   updateMapPaddockSelect();
   renderMap();
@@ -764,8 +734,24 @@ async function searchPlace() {
   }
 }
 
+function startDrawBoundary(paddockId) {
+  const p = paddockById(paddockId);
+  if (!p) return;
+  initMap();
+  if (!mapInstance) return;
+  const sel = document.getElementById("map-paddock");
+  if (sel) sel.value = paddockId;
+  showTab("map");
+  mapInstance.invalidateSize();
+  deleteAreaMode = false;
+  endMoveAreaMode();
+  drawMode = true;
+  drawPoints = [];
+  updateDrawUI(true);
+  renderMap();
+  document.getElementById("map-msg").textContent = "Klicka ut gr\u00e4nsen f\u00f6r " + p.name + " p\u00e5 kartan \u2013 punkter n\u00e4ra befintliga gr\u00e4nser snapmar automatiskt (st\u00f6rre snap p\u00e5 mobil). Tryck Spara gr\u00e4ns n\u00e4r du \u00e4r klar.";
+}
 function updateDrawUI(active) {
-  document.getElementById("draw-btn").hidden = active;
   document.getElementById("draw-save").hidden = !active;
   document.getElementById("draw-cancel").hidden = !active;
 }
@@ -1492,6 +1478,7 @@ function renderPaddocks() {
         <td class="num">${graze}</td>
         <td class="num">${animalDays}</td>
         <td>
+          <button class="secondary small" data-action="draw-paddock" data-id="${p.id}" title="Rita gr\u00e4ns p\u00e5 karta">+ Karta</button>
           <button class="ghost small" data-action="edit-paddock" data-id="${p.id}">Redigera</button>
           <button class="danger small" data-action="del-paddock" data-id="${p.id}">Ta bort</button>
         </td>
@@ -1509,6 +1496,10 @@ function renderPaddocks() {
     </div>
     <div class="card">
       <h2>Betesmarker (${state.paddocks.length})</h2>
+      <p class="note">Importera ett GPX-sp\u00e5r (t.ex. om du g\u00e5tt eller ridit runt markens omr\u00e5de med GPS p\u00e5) s\u00e5 ritas gr\u00e4nsen automatiskt och markens hektar r\u00e4knas ut. Har filen flera sp\u00e5r tilldelas de olika marker som saknar gr\u00e4ns. Med + Karta knappen ritar du markens gr\u00e4ns sj\u00e4lv p\u00e5 kartan.</p>
+      <label>Importera GPX
+        <input type="file" id="paddocks-gpx-file" accept=".gpx,application/gpx+xml">
+      </label>
       ${state.paddocks.length ? `
         <table>
           <thead><tr><th>Mark</th><th class="num">Hektar</th><th class="num">Antal beten</th><th class="num">Flyttar inom</th><th>Snitt vila</th><th class="num">Betade dagar</th><th class="num">Djurdagar</th><th></th></tr></thead>
@@ -1528,6 +1519,15 @@ function renderPaddocks() {
     state.paddocks.push({ id: uid(), name, sizeHa });
     save();
     renderPaddocks();
+  });
+  const gpxInput = document.getElementById("paddocks-gpx-file");
+  if (gpxInput) gpxInput.addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => importGpx(reader.result);
+    reader.readAsText(file);
+    e.target.value = "";
   });
 }
 
@@ -2196,6 +2196,10 @@ document.addEventListener("click", e => {
     showTab("moves");
     const sel = document.querySelector('#move-form select[name="herdId"]');
     if (sel) sel.value = btn.dataset.herd;
+    return;
+  }
+  if (action === "draw-paddock") {
+    startDrawBoundary(btn.dataset.id);
     return;
   }
   if (action === "edit-move") {
