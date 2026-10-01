@@ -7,7 +7,8 @@
       "**/node_modules/**",
       "README.md",
       "test.js",
-      "firestore.rules"
+      "firestore.rules",
+      "functions/**"
     ],
     "rewrites": [
       {
@@ -18,5 +19,8 @@
   },
   "firestore": {
     "rules": "firestore.rules"
+  },
+  "functions": {
+    "source": "functions"
   }
 }

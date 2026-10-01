@@ -23,11 +23,13 @@ Appen fungerar bra på mobil och surfplatta.
 - **Översikt** – vilken mark varje grupp betar just nu och hur många dagar de varit där.
 - **Statistik** – flyttar per månad, antal beten per mark, snittåterhämtning (vila)
   och totala betade dagar per mark.
+- **Tillsyn** – registrera att tillsyn är gjord med dagens datum, valfri djurgrupp/betesmark och en kommentar (standard: "Tillsyn är gjort"). Bulkregistrering skapar en tillsyn per dag mellan två datum. Hela listan kan exporteras till Excel (CSV-fil som öppnas direkt i Excel).
 - **Karta** – visa betesmarkerna på karta (OpenStreetMap). Importera ett GPX-spår
   (t.ex. från en GPS-app där du gått runt markens gräns) så ritas gränsen och
   hektaren beräknas automatiskt; markernas flyttar visas som streckade linjer mellan
   områdena och djurgruppernas aktuella position markeras. Gränser kan också ritas
   manuellt direkt på kartan.
+- **Inköpskontroll** – kontrollera ekologiska varor mot Debios standarder (Ø-merket, EU-ekologiskt blad, spårbarhet med mera) via en checklista. Sök producenten live mot [Finn øko](https://finnoko.debio.no/) (via öppen CORS-proxy, med direktlänk som fallback) och ta ett foto av etiketten som analyseras av AI (Google Gemini, kräver egen API-nyckel som sparas lokalt i webbläsaren).
 - **Data** – export/import av backup (JSON) samt möjlighet att radera all data.
 
 ## Teknik

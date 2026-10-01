@@ -169,6 +169,9 @@ td.num { text-align: center; }
 .hbar-wrap { display: grid; grid-template-columns: minmax(100px, 180px) 1fr 36px; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 0.88rem; }
 .hbar { background: var(--green); border-radius: 4px; min-width: 2px; height: 18px; }
 .note { color: var(--muted); font-size: 0.85rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: end; }
+.grid .span { grid-column: 1 / -1; }
+.grid hr { grid-column: 1 / -1; }
 #map-canvas { height: 65vh; min-height: 350px; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 12px; }
 #print-report { display: none; }
 #print-report .pr-page { page-break-after: always; }
@@ -181,7 +184,7 @@ td.num { text-align: center; }
 @media print {
   @page { size: A4 portrait; margin: 12mm; }
   body { background: #fff; }
-  #auth-screen, #app > nav, #user-bar, footer, #data, #overview, #moves, #paddocks, #herds, #stats, #map { display: none !important; }
+  #auth-screen, #app > nav, #user-bar, footer, #data, #overview, #moves, #paddocks, #herds, #stats, #map, #tillsyn, #inkop { display: none !important; }
   #app { display: block !important; }
   #print-report { display: block !important; }
   #print-report .pr-page { page-break-after: always; }
@@ -236,6 +239,8 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
     <button data-tab="herds">Djurgrupper</button>
     <button data-tab="stats">Statistik</button>
     <button data-tab="map">Karta</button>
+    <button data-tab="tillsyn">Tillsyn</button>
+    <button data-tab="inkop">Inköpskontroll</button>
     <button data-tab="data">Data</button>
   </nav>
 </header>
@@ -251,6 +256,8 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
   <section id="paddocks"></section>
   <section id="herds"></section>
   <section id="stats"></section>
+  <section id="tillsyn"></section>
+  <section id="inkop"></section>
   <section id="map">
     <div class="card">
       <h2>Karta över betesmarker</h2>
@@ -258,7 +265,6 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
         <label>Mark
           <select id="map-paddock"><option value="">Välj mark…</option></select>
         </label>
-        <button type="button" id="draw-btn" class="secondary">Rita gräns</button>
         <button type="button" id="draw-save" class="primary" hidden>Spara gräns</button>
         <button type="button" id="draw-cancel" class="ghost" hidden>Avbryt</button>
         <button type="button" id="movearea-btn" class="secondary">Rita flyttyta</button>
@@ -275,13 +281,10 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
           <input type="text" id="place-search" placeholder="t.ex. Fåvang">
         </label>
         <button type="button" id="place-search-btn" class="secondary">Sök</button>
-        <label>Importera GPX
-          <input type="file" id="gpx-file" accept=".gpx,application/gpx+xml">
-        </label>
       </form>
       <p class="note" id="map-msg"></p>
       <div id="map-canvas"></div>
-      <p class="note">Importera ett GPX-spår (t.ex. om du gått eller ridit runt markens område med GPS på) så ritas gränsen automatiskt och markens hektar räknas ut. Har filen flera spår tilldelas de olika marker som saknar gräns. Du kan också rita gränsen själv: välj mark, tryck Rita gräns och klicka ut hörnen på kartan.</p>
+      <p class="note">Importera ett GPX-spår (t.ex. om du gått eller ridit runt markens område med GPS på) så ritas gränsen automatiskt och markens hektar räknas ut. Har filen flera spår tilldelas de olika marker som saknar gräns. Du ritar gränsen själv med plus-knappen bredvid varje mark under fliken Betesmarker.</p>
     </div>
   </section>
   <section id="data"></section>
@@ -295,6 +298,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-functions.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDEIJCQ_QH4fU0NjOuRUxyimRGrEUfcyOA",
@@ -310,12 +314,24 @@ const useFirebase = typeof firebaseConfig.apiKey === "string" && firebaseConfig.
 const app = useFirebase ? initializeApp(firebaseConfig) : null;
 const auth = useFirebase ? getAuth(app) : null;
 const db = useFirebase ? getFirestore(app) : null;
+const functions = useFirebase ? getFunctions(app) : null;
 let currentUser = null;
 
 const STORAGE_KEY = "amp-grazing-v1";
 
 function emptyState() {
-  return { paddocks: [], herds: [], moves: [] };
+  return { paddocks: [], herds: [], moves: [], tillsyner: [], inkop: [], geminiKey: "" };
+}
+
+function geminiKey() {
+  return String(state.geminiKey || "").trim() || (localStorage.getItem("amp-gemini-key") || "").trim();
+}
+
+function setGeminiKey(val) {
+  const v = String(val || "").trim();
+  state.geminiKey = v;
+  localStorage.setItem("amp-gemini-key", v);
+  save();
 }
 
 function loadLocalState() {
@@ -324,6 +340,8 @@ function loadLocalState() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.paddocks) && Array.isArray(parsed.herds) && Array.isArray(parsed.moves)) {
+        parsed.tillsyner = Array.isArray(parsed.tillsyner) ? parsed.tillsyner : [];
+        parsed.inkop = Array.isArray(parsed.inkop) ? parsed.inkop : [];
         return parsed;
       }
     }
@@ -395,7 +413,10 @@ async function persistUserState() {
     await setDoc(doc(db, "farms", currentUser.uid), {
       paddocks: paddocksForCloud(state.paddocks),
       herds: state.herds,
-      moves: movesForCloud(state.moves)
+      moves: movesForCloud(state.moves),
+      tillsyner: Array.isArray(state.tillsyner) ? state.tillsyner : [],
+      inkop: Array.isArray(state.inkop) ? state.inkop : [],
+      geminiKey: String(state.geminiKey || "")
     });
     setSaveStatus("Sparat i molnet ✓", false);
   } catch (err) {
@@ -435,6 +456,10 @@ async function loadUserState(uid) {
     if (Array.isArray(data.paddocks) && Array.isArray(data.herds) && Array.isArray(data.moves)) {
       data.paddocks = normalizePaddocks(data.paddocks);
       data.moves = normalizeMoves(data.moves);
+      data.tillsyner = Array.isArray(data.tillsyner) ? data.tillsyner : [];
+      data.inkop = Array.isArray(data.inkop) ? data.inkop : [];
+      data.geminiKey = typeof data.geminiKey === "string" ? data.geminiKey : "";
+      if (data.geminiKey) localStorage.setItem("amp-gemini-key", data.geminiKey);
       return data;
     }
   }
@@ -541,22 +566,10 @@ function initMap() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(mapInstance);
   mapLayers = L.layerGroup().addTo(mapInstance);
-  document.getElementById("draw-btn").addEventListener("click", () => {
-    const sel = document.getElementById("map-paddock");
-    if (!sel.value) { document.getElementById("map-msg").textContent = "V\u00e4lj en mark f\u00f6rst."; return; }
-    drawMode = true;
-    drawPoints = [];
-    renderMap();
-    document.getElementById("draw-btn").hidden = true;
-    document.getElementById("draw-save").hidden = false;
-    document.getElementById("draw-cancel").hidden = false;
-    document.getElementById("map-msg").textContent = "Klicka ut markens h\u00f6rn p\u00e5 kartan \u2013 punkter n\u00e4ra befintliga gr\u00e4nser snapmar automatiskt (st\u00f6rre snap p\u00e5 mobil). Tryck Spara gr\u00e4ns n\u00e4r du \u00e4r klar.";
-    mapInstance.on("click", e => {
+  mapInstance.on("click", e => {
     if (deleteAreaMode) return;
-    if (!drawMode) return;
-    drawPoints.push(snapPoint(e.latlng));
-    renderDrawPreview();
-  });
+    if (drawMode) { drawPoints.push(snapPoint(e.latlng)); renderDrawPreview(); return; }
+    if (moveAreaMode) { moveAreaPoints.push(snapPoint(e.latlng)); renderMoveAreaPreview(); }
   });
   document.getElementById("draw-cancel").addEventListener("click", () => {
     drawMode = false;
@@ -613,12 +626,6 @@ function initMap() {
     moveAreaPoints = [];
     renderMap();
     document.getElementById("map-msg").textContent = "Rita omr\u00e5det djuren f\u00e5tt: klicka ut h\u00f6rnen \u2013 klick n\u00e4ra en befintlig gr\u00e4ns snapmar automatiskt till den, s\u00e5 att flyttytan passa precis inuti/s ansluten till marken. Tryck Spara flytt n\u00e4r du \u00e4r klar.";
-    mapInstance.on("click", e => {
-    if (deleteAreaMode) return;
-    if (!moveAreaMode) return;
-    moveAreaPoints.push(snapPoint(e.latlng));
-    renderMoveAreaPreview();
-  });
   });
   document.getElementById("movearea-save").addEventListener("click", () => {
     const herdId = document.getElementById("movearea-herd").value;
@@ -629,7 +636,8 @@ function initMap() {
     if (!dateVal) { document.getElementById("map-msg").textContent = "V\u00e4lj ett datum f\u00f6r flytten."; return; }
     const boundary = moveAreaPoints.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6]);
     const sizeHa = polygonAreaHa(boundary);
-    const from = currentPaddockId(herdId);
+    const from = herdPaddockIdAt(herdId, dateVal, nowTime());
+    const fromStr = from && from !== padId ? " från " + paddockName(from) : "";
     state.moves.push({
       id: uid(),
       herdId,
@@ -643,21 +651,13 @@ function initMap() {
     });
     save();
     endMoveAreaMode();
-    document.getElementById("map-msg").textContent = "Flytt sparad: " + herdName(herdId) + " f\u00e5tt " + sizeHa + " ha p\u00e5 " + paddockName(padId) + ".";
+    document.getElementById("map-msg").textContent = "Flytt sparad: " + herdName(herdId) + " f\u00e5tt " + sizeHa + " ha p\u00e5 " + paddockName(padId) + fromStr + ".";
     render();
   });
   document.getElementById("locate-btn").addEventListener("click", locateMe);
   document.getElementById("place-search-btn").addEventListener("click", searchPlace);
   document.getElementById("place-search").addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); searchPlace(); }
-  });
-  document.getElementById("gpx-file").addEventListener("change", e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => importGpx(reader.result);
-    reader.readAsText(file);
-    e.target.value = "";
   });
   updateMapPaddockSelect();
   renderMap();
@@ -734,8 +734,24 @@ async function searchPlace() {
   }
 }
 
+function startDrawBoundary(paddockId) {
+  const p = paddockById(paddockId);
+  if (!p) return;
+  initMap();
+  if (!mapInstance) return;
+  const sel = document.getElementById("map-paddock");
+  if (sel) sel.value = paddockId;
+  showTab("map");
+  mapInstance.invalidateSize();
+  deleteAreaMode = false;
+  endMoveAreaMode();
+  drawMode = true;
+  drawPoints = [];
+  updateDrawUI(true);
+  renderMap();
+  document.getElementById("map-msg").textContent = "Klicka ut gr\u00e4nsen f\u00f6r " + p.name + " p\u00e5 kartan \u2013 punkter n\u00e4ra befintliga gr\u00e4nser snapmar automatiskt (st\u00f6rre snap p\u00e5 mobil). Tryck Spara gr\u00e4ns n\u00e4r du \u00e4r klar.";
+}
 function updateDrawUI(active) {
-  document.getElementById("draw-btn").hidden = active;
   document.getElementById("draw-save").hidden = !active;
   document.getElementById("draw-cancel").hidden = !active;
 }
@@ -1078,6 +1094,34 @@ function currentArrival(herdId) {
   return ms.length ? ms[ms.length - 1] : null;
 }
 
+function herdPaddockIdAt(herdId, date, time) {
+  const key = (date || "") + "T" + (time || "00:00");
+  let cur = null;
+  for (const m of movesForHerd(herdId)) {
+    if ((m.date + "T" + (m.time || "00:00")) <= key) cur = m.toPaddockId;
+  }
+  return cur;
+}
+
+function repairInternalMoves() {
+  let fixed = 0;
+  const byHerd = {};
+  for (const m of [...state.moves].sort(compareMove)) {
+    (byHerd[m.herdId] = byHerd[m.herdId] || []).push(m);
+  }
+  for (const moves of Object.values(byHerd)) {
+    let prev = null;
+    for (const m of moves) {
+      if (m.fromPaddockId === m.toPaddockId) {
+        const expected = prev ? prev.toPaddockId : null;
+        if (m.fromPaddockId !== expected) { m.fromPaddockId = expected; fixed++; }
+      }
+      prev = m;
+    }
+  }
+  return fixed;
+}
+
 function daysBetween(startIso, endIso) {
   const d1 = new Date(startIso + "T00:00:00");
   const d2 = new Date(endIso + "T00:00:00");
@@ -1286,7 +1330,7 @@ function renderMoves() {
             <input type="date" name="date" value="${m.date}" required>
           </label>
           <label>Flyttar fr\u00e5n
-            <select name="from">${state.paddocks.map(p => `<option value="${p.id}" ${p.id === m.fromPaddockId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
+            <select name="from"><option value="" ${!m.fromPaddockId ? "selected" : ""}>\u2013 ingen \u2013</option>${state.paddocks.map(p => `<option value="${p.id}" ${p.id === m.fromPaddockId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
           </label>
           <label>Flyttar till
             <select name="to" required>${state.paddocks.map(p => `<option value="${p.id}" ${p.id === m.toPaddockId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
@@ -1434,6 +1478,7 @@ function renderPaddocks() {
         <td class="num">${graze}</td>
         <td class="num">${animalDays}</td>
         <td>
+          <button class="secondary small" data-action="draw-paddock" data-id="${p.id}" title="Rita gr\u00e4ns p\u00e5 karta">+ Karta</button>
           <button class="ghost small" data-action="edit-paddock" data-id="${p.id}">Redigera</button>
           <button class="danger small" data-action="del-paddock" data-id="${p.id}">Ta bort</button>
         </td>
@@ -1451,6 +1496,10 @@ function renderPaddocks() {
     </div>
     <div class="card">
       <h2>Betesmarker (${state.paddocks.length})</h2>
+      <p class="note">Importera ett GPX-sp\u00e5r (t.ex. om du g\u00e5tt eller ridit runt markens omr\u00e5de med GPS p\u00e5) s\u00e5 ritas gr\u00e4nsen automatiskt och markens hektar r\u00e4knas ut. Har filen flera sp\u00e5r tilldelas de olika marker som saknar gr\u00e4ns. Med + Karta knappen ritar du markens gr\u00e4ns sj\u00e4lv p\u00e5 kartan.</p>
+      <label>Importera GPX
+        <input type="file" id="paddocks-gpx-file" accept=".gpx,application/gpx+xml">
+      </label>
       ${state.paddocks.length ? `
         <table>
           <thead><tr><th>Mark</th><th class="num">Hektar</th><th class="num">Antal beten</th><th class="num">Flyttar inom</th><th>Snitt vila</th><th class="num">Betade dagar</th><th class="num">Djurdagar</th><th></th></tr></thead>
@@ -1470,6 +1519,15 @@ function renderPaddocks() {
     state.paddocks.push({ id: uid(), name, sizeHa });
     save();
     renderPaddocks();
+  });
+  const gpxInput = document.getElementById("paddocks-gpx-file");
+  if (gpxInput) gpxInput.addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => importGpx(reader.result);
+    reader.readAsText(file);
+    e.target.value = "";
   });
 }
 
@@ -1742,6 +1800,273 @@ async function buildPrintReport() {
   }
   el.innerHTML = pages.join("") || header + "<p>Inga betesmarker registrerade.</p>";
 }
+function renderTillsyn() {
+  const el = document.getElementById("tillsyn");
+  const list = (state.tillsyner || []).slice().sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")));
+  const rows = list.map(t => `
+      <tr>
+        <td>${esc(fmtDate(t.date))}</td>
+        <td>${esc(t.time || "–")}</td>
+        <td>${esc(herdName(t.herdId))}</td>
+        <td>${esc(paddockName(t.paddockId))}</td>
+        <td>${esc(t.comment || "Tillsyn är gjort")}</td>
+        <td>
+          <button class="ghost small" data-action="edit-tillsyn" data-id="${t.id}">Redigera</button>
+          <button class="danger small" data-action="del-tillsyn" data-id="${t.id}">Ta bort</button>
+        </td>
+      </tr>`).join("");
+  const herdOpts = [`<option value="">– alla grupper –</option>`].concat(
+    state.herds.map(h => `<option value="${h.id}">${esc(h.name)}</option>`)
+  ).join("");
+  const paddockOpts = [`<option value="">– alla marker –</option>`].concat(
+    state.paddocks.map(p => `<option value="${p.id}">${esc(p.name)}</option>`)
+  ).join("");
+  const editId = el.dataset.editId || "";
+  const editing = list.find(t => t.id === editId) || null;
+  const formHtml = editing ? `
+      <form data-action="save-tillsyn" data-id="${editing.id}" class="grid">
+        <label>Datum *<input type="date" name="date" value="${esc(editing.date)}" required></label>
+        <label>Tid<input type="time" name="time" value="${esc(editing.time || "")}"></label>
+        <label>Djurgrupp<select name="herdId">${herdOpts}</select></label>
+        <label>Betesmark<select name="paddockId">${paddockOpts}</select></label>
+        <label class="span">Kommentar<input type="text" name="comment" value="${esc(editing.comment || "Tillsyn är gjort")}" placeholder="Tillsyn är gjort"></label>
+        <div class="span" style="display:flex; gap:8px">
+          <button type="submit" class="primary small">Spara</button>
+          <button type="button" class="ghost small" data-action="cancel-edit-tillsyn">Avbryt</button>
+        </div>
+      </form>` : `
+      <form data-action="add-tillsyn" class="grid">
+        <label>Datum *<input type="date" name="date" value="${todayIso()}" required></label>
+        <label>Tid<input type="time" name="time" value="${nowTime()}"></label>
+        <label>Djurgrupp<select name="herdId">${herdOpts}</select></label>
+        <label>Betesmark<select name="paddockId">${paddockOpts}</select></label>
+        <label class="span">Kommentar<input type="text" name="comment" value="Tillsyn är gjort"></label>
+        <div class="span"><button type="submit" class="primary">Registrera tillsyn</button></div>
+      </form>
+      <hr>
+      <h3>Bulkregistrering</h3>
+      <form data-action="add-tillsyn-bulk" class="grid">
+        <label class="span">Från datum *<input type="date" name="from" value="${todayIso()}" required></label>
+        <label class="span">Till datum *<input type="date" name="to" value="${todayIso()}" required></label>
+        <label class="span">Kommentar per dag<input type="text" name="comment" value="Tillsyn är gjort"></label>
+        <div class="span"><button type="submit" class="secondary">Registrera en tillsyn per dag</button></div>
+      </form>`;
+  el.innerHTML = `
+    <div class="card">
+      <h2>Tillsyn</h2>
+      <p>Registrera att tillsyn är gjord – med dagens datum, eventuell djurgrupp/betesmark och en kommentar.</p>
+      ${formHtml}
+    </div>
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap">
+        <h2>Registrerade tillsyner (${list.length})</h2>
+        <button class="primary" data-action="export-tillsyn-excel">Exportera till Excel</button>
+      </div>
+      ${list.length ? `<table><thead><tr><th>Datum</th><th>Tid</th><th>Djurgrupp</th><th>Betesmark</th><th>Kommentar</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<p>Inga tillsyner registrerade ännu.</p>`}
+    </div>`;
+  if (editing) {
+    const form = el.querySelector(`form[data-action="save-tillsyn"]`);
+    if (form) {
+      form.querySelector('select[name="herdId"]').value = editing.herdId || "";
+      form.querySelector('select[name="paddockId"]').value = editing.paddockId || "";
+    }
+  }
+}
+
+function tillsynToCsv() {
+  const list = (state.tillsyner || []).slice().sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+  const q = s => `"${String(s ?? "").replace(/"/g, '""')}"`;
+  const lines = ["Datum;Tid;Djurgrupp;Betesmark;Kommentar"];
+  for (const t of list) {
+    lines.push([t.date, t.time || "", q(herdName(t.herdId)), q(paddockName(t.paddockId)), q(t.comment || "")].join(";"));
+  }
+  return "\uFEFF" + lines.join("\r\n");
+}
+
+const DEBIO_STANDARDS = [
+  { id: "omerke", label: "Ø-merket (Debios grønne Ø) syns på förpackningen", hint: "Ecological products in Norway must carry Debios Ø-merke" },
+  { id: "debio", label: "Debio-godkännande: producent/virksomhet är listad på Finn øko", hint: "Check the producer at finnoko.debio.no" },
+  { id: "eu", label: "EU:s ekologiska logotyp (grönt blad) – krävs för importvaror", hint: "Imported organic products must carry the EU organic leaf logo" },
+  { id: "sporbar", label: "Spårbarhet: kontrollkods/produktionsplats anges på etiketten", hint: "Organic labels must include traceability code of the control body" },
+ { id: "ingredienser", label: "Innehåll: inga tillsatser som ej är tillåtna i ekologisk produktion", hint: "Organic products cannot contain synthetic additives" }
+];
+
+async function debioSearch(query) {
+  const proxy = "https://api.allorigins.win/raw?url=";
+  const target = "https://finnoko.debio.no/?s=" + encodeURIComponent(query);
+  try {
+    const res = await fetch(proxy + encodeURIComponent(target));
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const html = await res.text();
+    const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    if (text.includes(query) || /antall godkjente virksomheter/i.test(text)) {
+      return { ok: true, text: text.slice(0, 2000) };
+    }
+    return { ok: false, error: "Ingen träff i Finn øko-svaret" };
+  } catch (err) {
+    return { ok: false, error: "Kunde inte nå Finn øko via proxy: " + String(err && err.message || err) };
+  }
+}
+
+function renderInkop() {
+  const el = document.getElementById("inkop");
+  const list = (state.inkop || []).slice().sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")));
+  const checks = DEBIO_STANDARDS.map(s => `
+        <label style="flex-direction:row; align-items:center; gap:8px">
+          <input type="checkbox" name="chk_${s.id}" checked>
+          <span>${esc(s.label)}</span>
+        </label>`).join("");
+  const rows = list.map(k => {
+    const ok = DEBIO_STANDARDS.every(s => k.checks && k.checks[s.id]);
+    return `
+      <tr>
+        <td>${esc(fmtDate(k.date))}</td>
+        <td>${esc(k.varu)}</td>
+        <td>${esc(k.producent || "–")}</td>
+        <td>${ok ? '<span style="color:var(--green);font-weight:600">Godkänd</span>' : '<span style="color:var(--danger);font-weight:600">Ej godkänd</span>'}</td>
+        <td>${k.aiResult ? esc(k.aiResult) : "–"}</td>
+        <td>${k.photo ? `<img src="${k.photo}" style="max-width:60px;max-height:60px;object-fit:cover;border-radius:4px">` : "–"}</td>
+        <td>
+          <button class="danger small" data-action="del-inkop" data-id="${k.id}">Ta bort</button>
+        </td>
+      </tr>`;
+  }).join("");
+  el.innerHTML = `
+    <div class="card">
+      <h2>Inköpskontroll – ekologiska varor</h2>
+      <p>Kontrollera varan mot Debios krav. Sök upp producenten live på <a href="https://finnoko.debio.no/" target="_blank" rel="noopener">Finn øko</a>.</p>
+      <form data-action="add-inkop" class="grid" enctype="multipart/form-data">
+        <label>Datum *<input type="date" name="date" value="${todayIso()}" required></label>
+        <label>Vara *<input type="text" name="varu" placeholder="t.ex. Ekologisk mjölk" required></label>
+        <label>Producent/leverantör<input type="text" name="producent" placeholder="t.ex. Tine"></label>
+        <label class="span">Kontroller mot Debios standarder:</label>
+        ${checks}
+        <label class="span">Sök producent på Finn øko (live)
+          <div style="display:flex; gap:8px">
+            <input type="text" id="inkop-debio-search" placeholder="Producentnamn" style="flex:1">
+            <button type="button" class="secondary" data-action="debio-search">Sök på Finn øko</button>
+          </div>
+          <p class="note" id="inkop-debio-result"></p>
+        </label>
+        <label class="span">Ta ett kort av varan/etiketten (valfritt – analyseras automatiskt av AI för alla inloggade)
+          <input type="file" id="inkop-photo" accept="image/*">
+        </label>
+        <p class="note" id="inkop-ai-result"></p>
+        <label class="span">Egen Gemini API-nyckel (valfri – behövs inte, AI-analysen fungerar för alla inloggade utan den)
+          <input type="password" id="inkop-gemini-key" placeholder="Klistra in din Gemini API-nyckel" value="${esc(geminiKey())}">
+          <span class="note" id="inkop-key-status">${geminiKey() ? "Nyckeln är sparad med ditt gårdskonto – den gäller på alla dina enheter." : ""}</span>
+        </label>
+        <div class="span"><button type="submit" class="primary">Spara inköpskontroll</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Genomförda kontroller (${list.length})</h2>
+      ${list.length ? `<table><thead><tr><th>Datum</th><th>Vara</th><th>Producent</th><th>Status</th><th>AI-analys</th><th>Foto</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<p>Inga kontroller registrerade ännu.</p>`}
+    </div>`;
+}
+
+async function analyzePhotoOnServer(dataUrl) {
+  if (!useFirebase || !currentUser || !functions) {
+    return { ok: false, error: "AI-analys på servern kräver inloggning." };
+  }
+  const m = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+  if (!m) return { ok: false, error: "Ogiltigt bildformat." };
+  try {
+    const analyze = httpsCallable(functions, "analyzePhoto");
+    const res = await analyze({ imageBase64: m[2], mimeType: m[1] });
+    if (res.data && res.data.ok) return { ok: true, text: res.data.text };
+    return { ok: false, error: "Servern kunde inte analysera bilden." };
+  } catch (err) {
+    const msg = String(err && err.message || err);
+    if (err && (err.code === "unauthenticated" || err.code === "permission-denied")) {
+      return { ok: false, error: "Du måste vara inloggad för AI-analys." };
+    }
+    return { ok: false, error: msg };
+  }
+}
+
+async function analyzePhotoWithGemini(dataUrl) {
+  const key = geminiKey();
+  if (!key) return analyzePhotoOnServer(dataUrl);
+  const m = dataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+  if (!m) return { ok: false, error: "Ogiltigt bildformat." };
+  const body = {
+    contents: [{
+      parts: [
+        { inline_data: { mime_type: m[1], data: m[2] } },
+        { text: "Detta är ett foto av en matvaras etikett. Analysera: 1) Finns det något ekologiskt märke (Debios Ø-merke, EU-ekologiskt blad, Demeter)? 2) Vilket är varumärket/producenten om det syns? 3) Finns en kontrollkod/spårbarhetskod? Svara kortfattat på svenska, max 5 meningar." }
+      ]
+    }]
+  };
+  const prompt = "Detta är ett foto av en matvaras etikett. Analysera: 1) Finns det något ekologiskt märke (Debios Ø-merke, EU-ekologiskt blad, Demeter)? 2) Vilket är varumärket/producenten om det syns? 3) Finns en kontrollkod/spårbarhetskod? Svara kortfattat på svenska, max 5 meningar.";
+  const attempts = [
+    {
+      name: "interactions",
+      url: "https://generativelanguage.googleapis.com/v1beta/interactions",
+      build: model => ({ model, input: [
+        { type: "image", data: m[2], mime_type: m[1] },
+        { type: "text", text: prompt }
+      ] }),
+      extract: data => {
+        if (Array.isArray(data.model_output)) {
+          for (const step of data.model_output) {
+            const parts = step.content && step.content.parts;
+            if (Array.isArray(parts)) return parts.map(p => p.text || "").join("");
+          }
+        }
+        return (data.outputText || data.output_text || "").toString();
+      }
+    },
+    {
+      name: "generateContent",
+      url: null,
+      build: model => body,
+      extract: data => data.candidates && data.candidates[0] && data.candidates[0].content.parts.map(p => p.text).join("") || ""
+    }
+  ];
+  const models = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash"];
+  const lastErrors = [];
+  for (const att of attempts) {
+    for (const model of models) {
+      for (let tryNo = 0; tryNo < 2; tryNo++) {
+        try {
+          const url = att.name === "interactions"
+            ? att.url
+            : "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+            body: JSON.stringify(att.build(model))
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            const msg = (data.error && data.error.message) || String(res.status);
+            if (res.status === 401 || res.status === 403) {
+              return { ok: false, error: "Gemini avvisade API-nyckeln (" + res.status + "). Skapa en ny nyckel i Google AI Studio (aistudio.google.com/apikey) och klistra in den igen. Detalj: " + msg };
+            }
+            const retryable = [400, 404, 429, 500, 502, 503, 504].includes(res.status);
+            if (!retryable) return { ok: false, error: "Gemini-fel: " + msg };
+            lastErrors.push(att.name + "/" + model + ": " + msg);
+            if (tryNo === 0) {
+              await new Promise(r => setTimeout(r, 2000 + Math.random() * 1000));
+              continue;
+            }
+            break;
+          }
+          const text = att.extract(data);
+          if (text && text.trim()) return { ok: true, text: text.trim() };
+          lastErrors.push(att.name + "/" + model + ": tomt svar");
+          break;
+        } catch (err) {
+          lastErrors.push(att.name + "/" + model + ": " + String(err && err.message || err));
+          break;
+        }
+      }
+    }
+  }
+  return { ok: false, error: "Gemini-fel: ingen tillgänglig modell kunde anropas (tjänsten kan vara överbelastad – försök igen om en stund). " + lastErrors.slice(-3).join(" | ") };
+}
+
 function renderData() {
   const el = document.getElementById("data");
   const count = state.paddocks.length + state.herds.length + state.moves.length;
@@ -1752,6 +2077,7 @@ function renderData() {
       <p>
         <button class="primary" data-action="export">Exportera backup (JSON)</button>
         <button class="primary" data-action="export-pdf">Exportera rapport (PDF)</button>
+        <button class="secondary" data-action="repair-moves">Reparera flyttar inom marken</button>
       </p>
       <p>
         <label style="flex-direction:row; align-items:center; gap:8px;">
@@ -1798,6 +2124,8 @@ function render() {
   renderPaddocks();
   renderHerds();
   renderStats();
+  renderTillsyn();
+  renderInkop();
   renderData();
 }
 
@@ -1808,6 +2136,48 @@ function showTab(tab) {
     setTimeout(() => mapInstance.invalidateSize(), 50);
   }
 }
+
+document.addEventListener("change", e => {
+  if (e.target && e.target.id === "inkop-gemini-key") {
+    const val = (e.target.value || "").trim();
+    const status = document.getElementById("inkop-key-status");
+    setGeminiKey(val);
+    if (status) status.textContent = val ? "Nyckeln är sparad med ditt gårdskonto – den gäller på alla dina enheter." : "";
+    return;
+  }
+  if (e.target && e.target.id === "inkop-photo") {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const form = e.target.closest("form");
+    const aiOut = document.getElementById("inkop-ai-result");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxSide = 1024;
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+        form.dataset.photo = dataUrl;
+        aiOut.textContent = "Analyserar bilden med Gemini…";
+        analyzePhotoWithGemini(dataUrl).then(r => {
+          if (r.ok) {
+            form.dataset.aiResult = r.text;
+            aiOut.innerHTML = `<span style="color:var(--green);font-weight:600">AI-analys:</span> ${esc(r.text)}`;
+          } else {
+            delete form.dataset.aiResult;
+            aiOut.innerHTML = `<span style="color:var(--danger)">${esc(r.error)}</span> Fotot sparas ändå med kontrollen.`;
+          }
+        });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+});
 
 document.getElementById("nav").addEventListener("click", e => {
   const btn = e.target.closest("button[data-tab]");
@@ -1828,6 +2198,10 @@ document.addEventListener("click", e => {
     if (sel) sel.value = btn.dataset.herd;
     return;
   }
+  if (action === "draw-paddock") {
+    startDrawBoundary(btn.dataset.id);
+    return;
+  }
   if (action === "edit-move") {
     document.getElementById("moves").dataset.editMoveId = btn.dataset.id;
     renderMoves();
@@ -1844,6 +2218,17 @@ document.addEventListener("click", e => {
       save();
       render();
       showTab("moves");
+    }
+    return;
+  }
+  if (action === "repair-moves") {
+    const fixed = repairInternalMoves();
+    if (fixed) {
+      save();
+      render();
+      alert("R\u00e4ttade " + fixed + " flytt" + (fixed === 1 ? "" : "ar") + ": fr\u00e5n-marken \u00e4r nu den mark gruppen faktiskt stod i enligt tidigare flytt.");
+    } else {
+      alert("Inga felaktiga flyttar inom marken hittades.");
     }
     return;
   }
@@ -1895,7 +2280,8 @@ document.addEventListener("click", e => {
     return;
   }
   if (action === "export") {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const { geminiKey, ...backup } = state;
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -1907,6 +2293,63 @@ document.addEventListener("click", e => {
   if (action === "export-pdf") {
     buildPrintReport();
     window.print();
+    return;
+  }
+  if (action === "export-tillsyn-excel") {
+    const blob = new Blob([tillsynToCsv()], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "tillsyn-" + todayIso() + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
+    return;
+  }
+  if (action === "edit-tillsyn") {
+    document.getElementById("tillsyn").dataset.editId = btn.dataset.id;
+    renderTillsyn();
+    return;
+  }
+  if (action === "cancel-edit-tillsyn") {
+    delete document.getElementById("tillsyn").dataset.editId;
+    renderTillsyn();
+    return;
+  }
+  if (action === "del-tillsyn") {
+    if (confirm("Ta bort denna tillsyn?")) {
+      state.tillsyner = (state.tillsyner || []).filter(t => t.id !== btn.dataset.id);
+      save();
+      renderTillsyn();
+    }
+    return;
+  }
+  if (action === "del-inkop") {
+    if (confirm("Ta bort denna inköpskontroll?")) {
+      state.inkop = (state.inkop || []).filter(k => k.id !== btn.dataset.id);
+      save();
+      renderInkop();
+    }
+    return;
+  }
+  if (action === "debio-search") {
+    const q = (document.getElementById("inkop-debio-search").value || "").trim();
+    const out = document.getElementById("inkop-debio-result");
+    if (!q) {
+      out.textContent = "Skriv ett producentnamn att söka på.";
+      return;
+    }
+    out.textContent = "Söker på Finn øko…";
+    debioSearch(q).then(r => {
+      if (r.ok) {
+        const found = r.text.toLowerCase().includes(q.toLowerCase());
+        out.innerHTML = found
+          ? '<span style="color:var(--green);font-weight:600">✓ Träff i Finn øko-svaret – kontrollera manuellt: '
+          : '<span style="color:var(--danger);font-weight:600">Ingen direkt träff – kontrollera manuellt: ';
+        out.innerHTML += `<a href="https://finnoko.debio.no/?s=${encodeURIComponent(q)}" target="_blank" rel="noopener">finnoko.debio.no</a>`;
+      } else {
+        out.innerHTML = `<span style="color:var(--danger)">${esc(r.error)}</span> – kontrollera manuellt: <a href="https://finnoko.debio.no/?s=${encodeURIComponent(q)}" target="_blank" rel="noopener">finnoko.debio.no</a>`;
+      }
+    });
     return;
   }
   if (action === "wipe") {
@@ -1924,6 +2367,94 @@ document.addEventListener("submit", e => {
   if (!form) return;
   const action = form.dataset.action;
   const id = form.dataset.id;
+  if (action === "add-tillsyn") {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const date = fd.get("date");
+    if (!date) return;
+    state.tillsyner = state.tillsyner || [];
+    state.tillsyner.push({
+      id: uid(),
+      date,
+      time: fd.get("time") || "",
+      herdId: fd.get("herdId") || null,
+      paddockId: fd.get("paddockId") || null,
+      comment: (fd.get("comment") || "").trim() || "Tillsyn är gjort"
+    });
+    save();
+    renderTillsyn();
+    return;
+  }
+  if (action === "add-tillsyn-bulk") {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const from = fd.get("from");
+    const to = fd.get("to");
+    if (!from || !to) return;
+    if (from > to) {
+      alert("\"Från datum\" måste vara samma eller tidigare än \"Till datum\".");
+      return;
+    }
+    const comment = (fd.get("comment") || "").trim() || "Tillsyn är gjort";
+    state.tillsyner = state.tillsyner || [];
+    let d = from;
+    let count = 0;
+    while (d <= to) {
+      state.tillsyner.push({ id: uid(), date: d, time: "", herdId: null, paddockId: null, comment });
+      count++;
+      const parts = d.split("-");
+      const dt = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+      dt.setDate(dt.getDate() + 1);
+      const pad = n => String(n).padStart(2, "0");
+      d = dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate());
+    }
+    save();
+    renderTillsyn();
+    alert(count + " tillsyn(er) registrerade (en per dag).");
+    return;
+  }
+  if (action === "save-tillsyn") {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const t = (state.tillsyner || []).find(x => x.id === id);
+    if (!t) return;
+    const date = fd.get("date");
+    if (!date) return;
+    t.date = date;
+    t.time = fd.get("time") || "";
+    t.herdId = fd.get("herdId") || null;
+    t.paddockId = fd.get("paddockId") || null;
+    t.comment = (fd.get("comment") || "").trim() || "Tillsyn är gjort";
+    delete document.getElementById("tillsyn").dataset.editId;
+    save();
+    renderTillsyn();
+    return;
+  }
+  if (action === "add-inkop") {
+    e.preventDefault();
+    const form = e.target;
+    const fd = new FormData(form);
+    const date = fd.get("date");
+    const varu = (fd.get("varu") || "").trim();
+    if (!date || !varu) return;
+    const checks = {};
+    for (const s of DEBIO_STANDARDS) checks[s.id] = !!fd.get("chk_" + s.id);
+    state.inkop = state.inkop || [];
+    const entry = {
+      id: uid(),
+      date,
+      time: nowTime(),
+      varu,
+      producent: (fd.get("producent") || "").trim(),
+      checks,
+      aiResult: form.dataset.aiResult || null,
+      photo: form.dataset.photo || null
+    };
+    state.inkop.push(entry);
+    save();
+    renderInkop();
+    return;
+  }
   if (action === "save-move") {
     e.preventDefault();
     const fd = new FormData(form);
