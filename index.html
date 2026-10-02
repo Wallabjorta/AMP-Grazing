@@ -54,6 +54,7 @@ nav button {
 }
 nav button.active { background: var(--bg); color: var(--text); font-weight: 600; }
 .edit-vertex { background: var(--accent, #2e6b34); border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 3px rgba(0,0,0,.5); cursor: move; }
+.edit-midpoint { background: #fff; border: 2px solid var(--accent, #2e6b34); border-radius: 50%; opacity: 0.85; box-shadow: 0 0 2px rgba(0,0,0,.4); cursor: copy; }
 main { max-width: 900px; margin: 0 auto; padding: 20px; }
 section { display: none; }
 section.active { display: block; }
@@ -696,6 +697,8 @@ function initMap() {
 function endEditMode() {
   editAreaMode = false;
   editTarget = null;
+  editCycleList = null;
+  editCycleIndex = -1;
   const btn = document.getElementById("edit-area-btn");
   if (btn) btn.textContent = "Redigera polygon";
   document.getElementById("map-msg").textContent = "";
@@ -841,33 +844,104 @@ function updateDrawUI(active) {
   document.getElementById("draw-cancel").hidden = !active;
 }
 
+function persistEdit(target, boundaryRef) {
+  const pts = boundaryRef.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6]);
+  if (target.type === "paddock") {
+    const p = paddockById(target.id);
+    p.boundary = pts;
+    p.sizeHa = polygonAreaHa(pts);
+  } else {
+    const m = state.moves.find(x => x.id === target.id);
+    if (m) { m.areaBoundary = pts; m.sizeHa = polygonAreaHa(pts); }
+  }
+  save();
+}
+let editCycleList = null;
+let editCycleIndex = -1;
+function pointInPolygon(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+    const intersect = ((yi > pt[1]) !== (yj > pt[1])) && (pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+function polygonsAt(latlng) {
+  const hits = [];
+  for (const p of state.paddocks) {
+    if (p.boundary && p.boundary.length >= 3 && pointInPolygon([latlng.lat, latlng.lng], p.boundary)) hits.push({ type: "paddock", id: p.id });
+  }
+  for (const m of state.moves) {
+    if (m.areaBoundary && m.areaBoundary.length >= 3 && pointInPolygon([latlng.lat, latlng.lng], m.areaBoundary)) hits.push({ type: "move", id: m.id });
+  }
+  return hits;
+}
+function startEditPolygonForTarget(t) {
+  if (t.type === "paddock") {
+    const p = paddockById(t.id);
+    startEditPolygon(p.boundary, L.polygon(p.boundary), { type: "paddock", id: p.id });
+  } else {
+    const m = state.moves.find(x => x.id === t.id);
+    if (m) startEditPolygon(m.areaBoundary, L.polygon(m.areaBoundary), { type: "move", id: m.id });
+  }
+}
+function selectPolygonAt(latlng, clickedTarget) {
+  const hits = polygonsAt(latlng);
+  if (!hits.length) { startEditPolygonForTarget(clickedTarget); return; }
+  const clickedIdx = hits.findIndex(h => h.type === clickedTarget.type && h.id === clickedTarget.id);
+  const sameSpot = editCycleList && editCycleList.length === hits.length && hits.every((h, i) => editCycleList[i].type === h.type && editCycleList[i].id === h.id);
+  if (!sameSpot) { editCycleIndex = clickedIdx; } else { editCycleIndex = (editCycleIndex + 1) % hits.length; }
+  editCycleList = hits;
+  startEditPolygonForTarget(hits[editCycleIndex]);
+}
 function startEditPolygon(boundaryRef, leafletPoly, target) {
   if (editTarget && editTarget.cleanup) editTarget.cleanup();
   editTarget = { ...target };
-  leafletPoly.editing = leafletPoly.editing || {};
-  document.getElementById("map-msg").textContent = "Dra h\u00f6rnen f\u00f6r att justera polygonen. \u00c4ndringar sparas automatiskt. Tryck Klar n\u00e4r du \u00e4r klar.";
-  const markers = boundaryRef.map((pt, i) => {
-    const mk = L.marker(pt, { draggable: true, icon: L.divIcon({ className: "edit-vertex", iconSize: [12, 12] }) });
-    mk.on("drag", () => {
-      const pos = mk.getLatLng();
-      boundaryRef[i] = [Math.round(pos.lat * 1e6) / 1e6, Math.round(pos.lng * 1e6) / 1e6];
-      leafletPoly.setLatLngs(boundaryRef);
+  document.getElementById("map-msg").textContent = (target.type === "paddock" ? "Redigerar markgr\u00e4ns" : "Redigerar flyttyta") + ": dra h\u00f6rnen f\u00f6r att flytta \u2013 dra de sm\u00e5 vita mittpunkterna p\u00e5 kanterna f\u00f6r att l\u00e4gga till nya h\u00f6rn. \u00c4ndringar sparas automatiskt. Klicka igen p\u00e5 samma st\u00e4lle f\u00f6r att v\u00e4xla till underliggande polygon. Tryck Klar n\u00e4r du \u00e4r klar.";
+  const layers = { vertices: [], midpoints: [] };
+  function refreshMidpoints() {
+    layers.midpoints.forEach(mk => mapLayers.removeLayer(mk));
+    layers.midpoints = [];
+    for (let i = 0; i < boundaryRef.length; i++) {
+      const a = boundaryRef[i], b = boundaryRef[(i + 1) % boundaryRef.length];
+      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      const mk = L.marker(mid, { draggable: true, icon: L.divIcon({ className: "edit-midpoint", iconSize: [10, 10] }) });
+      mk.on("dragend", () => {
+        const pos = mk.getLatLng();
+        boundaryRef.splice(i + 1, 0, [Math.round(pos.lat * 1e6) / 1e6, Math.round(pos.lng * 1e6) / 1e6]);
+        persistEdit(target, boundaryRef);
+        leafletPoly.setLatLngs(boundaryRef);
+        rebuildVertices();
+        refreshMidpoints();
+      });
+      mk.addTo(mapLayers);
+      layers.midpoints.push(mk);
+    }
+  }
+  function rebuildVertices() {
+    layers.vertices.forEach(mk => mapLayers.removeLayer(mk));
+    layers.vertices = boundaryRef.map((pt, i) => {
+      const mk = L.marker(pt, { draggable: true, icon: L.divIcon({ className: "edit-vertex", iconSize: [12, 12] }) });
+      mk.on("drag", () => {
+        const pos = mk.getLatLng();
+        boundaryRef[i] = [Math.round(pos.lat * 1e6) / 1e6, Math.round(pos.lng * 1e6) / 1e6];
+        leafletPoly.setLatLngs(boundaryRef);
+      });
+      mk.on("dragend", () => {
+        persistEdit(target, boundaryRef);
+        refreshMidpoints();
+      });
+      mk.addTo(mapLayers);
+      return mk;
     });
-    mk.on("dragend", () => {
-      if (target.type === "paddock") {
-        const p = paddockById(target.id);
-        p.boundary = boundaryRef.map(pt => [pt[0], pt[1]]);
-        p.sizeHa = polygonAreaHa(p.boundary);
-      } else {
-        const m = state.moves.find(x => x.id === target.id);
-        if (m) { m.areaBoundary = boundaryRef.map(pt => [pt[0], pt[1]]); m.sizeHa = polygonAreaHa(m.areaBoundary); }
-      }
-      save();
-    });
-    mk.addTo(mapLayers);
-    return mk;
-  });
-  editTarget.cleanup = () => markers.forEach(mk => mapLayers.removeLayer(mk));
+  }
+  rebuildVertices();
+  refreshMidpoints();
+  editTarget.cleanup = () => {
+    layers.vertices.forEach(mk => mapLayers.removeLayer(mk));
+    layers.midpoints.forEach(mk => mapLayers.removeLayer(mk));
+  };
 }
 function zoomToPaddock(paddockId) {
   if (!mapInstance) return;
@@ -1026,7 +1100,7 @@ function renderMap() {
         }
       });
     } else if (editAreaMode) {
-      poly.on("click", () => startEditPolygon(p.boundary, poly, { type: "paddock", id: p.id }));
+      poly.on("click", e => selectPolygonAt(e.latlng, { type: "paddock", id: p.id }));
     } else {
       poly.on("click", () => {
         const sel = document.getElementById("map-paddock");
@@ -1051,7 +1125,7 @@ function renderMap() {
     const area = L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: !drawing || editAreaMode })
       .bindPopup(esc(herdName(m.herdId)) + ": " + formatArea(m.sizeHa) + "<br>" + fmtDate(m.date) + (restText ? "<br>" + restText : "") + "<br>Djurdagar: " + moveAnimalDays(m));
     if (editAreaMode && !deleting) {
-      area.on("click", () => startEditPolygon(m.areaBoundary, area, { type: "move", id: m.id }));
+      area.on("click", e => selectPolygonAt(e.latlng, { type: "move", id: m.id }));
     } else if (deleting) {
       area.on("click", () => {
         if (window.confirm("Ta bort flytten " + fmtDate(m.date) + " (" + herdName(m.herdId) + ") och dess yta? Flytten raderas \u00e4ven ur statistiken.")) {
@@ -1065,7 +1139,7 @@ function renderMap() {
     }
     area.addTo(mapLayers);
     const badge = moveAreaBadge(info);
-    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: !deleting }).addTo(mapLayers);
+    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: !deleting && !editAreaMode }).addTo(mapLayers);
   }
   for (const h of state.herds) {
     const ms = movesForHerd(h.id);
