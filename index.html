@@ -561,6 +561,7 @@ let moveAreaMode = false;
 let moveAreaPoints = [];
 let deleteAreaMode = false;
 let editAreaMode = false;
+let editScope = "paddocks";
 let editTarget = null;
 
 function initMap() {
@@ -590,6 +591,7 @@ function initMap() {
   });
   document.getElementById("edit-area-btn").addEventListener("click", () => {
     if (editAreaMode) { endEditMode(); return; }
+    editScope = currentTab === "moves" ? "moves" : "paddocks";
     editAreaMode = !editAreaMode;
     if (!editAreaMode) return;
     drawMode = false;
@@ -601,7 +603,9 @@ function initMap() {
     renderMap();
     document.getElementById("draw-cancel").hidden = false;
     document.getElementById("edit-area-btn").textContent = "Klar";
-    document.getElementById("map-msg").textContent = "Redigera polygon: klicka p\u00e5 en markgr\u00e4ns eller flyttyta f\u00f6r att g\u00f6ra dess h\u00f6rn dragbara. Dra h\u00f6rnen till r\u00e4tt plats \u2013 \u00e4ndringarna sparas automatiskt. Tryck Klar n\u00e4r du \u00e4r klar.";
+    document.getElementById("map-msg").textContent = editScope === "moves"
+      ? "Redigera flyttytor: klicka p\u00e5 en flyttyta f\u00f6r att g\u00f6ra dess h\u00f6rn dragbara. Tryck Klar n\u00e4r du \u00e4r klar."
+      : "Redigera betesmarker: klicka p\u00e5 en markgr\u00e4ns f\u00f6r att g\u00f6ra dess h\u00f6rn dragbara. Tryck Klar n\u00e4r du \u00e4r klar.";
   });
   document.getElementById("delete-area-btn").addEventListener("click", () => {
     deleteAreaMode = !deleteAreaMode;
@@ -897,8 +901,15 @@ function startEditPolygonForTarget(t) {
   startEditPolygon(t.type === "paddock" ? paddockById(t.id).boundary : state.moves.find(x => x.id === t.id).areaBoundary, rendered, { type: t.type, id: t.id });
 }
 function selectPolygonAt(latlng, clickedTarget) {
-  const hits = polygonsAt(latlng);
-  if (!hits.length) { startEditPolygonForTarget(clickedTarget); return; }
+  let hits = polygonsAt(latlng);
+  const inScope = h => editScope === "moves" ? h.type === "move" : h.type === "paddock";
+  hits = hits.filter(inScope);
+  if (!hits.length) {
+    document.getElementById("map-msg").textContent = editScope === "moves"
+      ? "H\u00e4r finns inga flyttytor att redigera. G\u00e5 till fliken Betesmarker om du vill redigera markgr\u00e4nser."
+      : "H\u00e4r finns inga betesmarksgr\u00e4nser att redigera. G\u00e5 till fliken Flyttar om du vill redigera flyttytor.";
+    return;
+  }
   const clickedIdx = hits.findIndex(h => h.type === clickedTarget.type && h.id === clickedTarget.id);
   const sameSpot = editCycleList && editCycleList.length === hits.length && hits.every((h, i) => editCycleList[i].type === h.type && editCycleList[i].id === h.id);
   if (!sameSpot) { editCycleIndex = clickedIdx; } else { editCycleIndex = (editCycleIndex + 1) % hits.length; }
@@ -2360,7 +2371,14 @@ function render() {
   renderData();
 }
 
+let currentTab = "overview";
 function showTab(tab) {
+  if (tab !== "map") {
+    if (editAreaMode) endEditMode();
+    if (deleteAreaMode) { deleteAreaMode = false; renderMap(); }
+    editScope = currentTab === "moves" ? "moves" : "paddocks";
+  }
+  currentTab = tab;
   document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll("main section").forEach(s => s.classList.toggle("active", s.id === tab));
   if (tab === "map" && mapInstance) {
