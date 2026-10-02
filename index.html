@@ -53,6 +53,7 @@ nav button {
   font-size: 0.95rem;
 }
 nav button.active { background: var(--bg); color: var(--text); font-weight: 600; }
+.edit-vertex { background: var(--accent, #2e6b34); border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 3px rgba(0,0,0,.5); cursor: move; }
 main { max-width: 900px; margin: 0 auto; padding: 20px; }
 section { display: none; }
 section.active { display: block; }
@@ -268,6 +269,7 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
         <button type="button" id="draw-save" class="primary" hidden>Spara gräns</button>
         <button type="button" id="draw-undo" class="secondary" hidden>Ångra punkt</button>
         <button type="button" id="draw-cancel" class="ghost" hidden>Avbryt</button>
+        <button type="button" id="edit-area-btn" class="secondary">Redigera polygon</button>
         <button type="button" id="delete-area-btn" class="secondary">Radera polygon</button>
         <button type="button" id="movearea-save" class="primary" hidden>Spara flytt</button>
         <label id="movearea-herd-label" hidden>Djurgrupp
@@ -556,6 +558,8 @@ let drawPoints = [];
 let moveAreaMode = false;
 let moveAreaPoints = [];
 let deleteAreaMode = false;
+let editAreaMode = false;
+let editTarget = null;
 
 function initMap() {
   const canvas = document.getElementById("map-canvas");
@@ -575,15 +579,34 @@ function initMap() {
     drawMode = false;
     drawNewPaddock = false;
     drawPoints = [];
+    editAreaMode = false;
+    editTarget = null;
     endMoveAreaMode();
     deleteAreaMode = false;
     updateDrawUI(false);
     renderMap();
   });
+  document.getElementById("edit-area-btn").addEventListener("click", () => {
+    if (editAreaMode) { endEditMode(); return; }
+    editAreaMode = !editAreaMode;
+    if (!editAreaMode) return;
+    drawMode = false;
+    drawNewPaddock = false;
+    drawPoints = [];
+    endMoveAreaMode();
+    deleteAreaMode = false;
+    updateDrawUI(false);
+    renderMap();
+    document.getElementById("draw-cancel").hidden = false;
+    document.getElementById("edit-area-btn").textContent = "Klar";
+    document.getElementById("map-msg").textContent = "Redigera polygon: klicka p\u00e5 en markgr\u00e4ns eller flyttyta f\u00f6r att g\u00f6ra dess h\u00f6rn dragbara. Dra h\u00f6rnen till r\u00e4tt plats \u2013 \u00e4ndringarna sparas automatiskt. Tryck Klar n\u00e4r du \u00e4r klar.";
+  });
   document.getElementById("delete-area-btn").addEventListener("click", () => {
     deleteAreaMode = !deleteAreaMode;
     drawMode = false;
+    drawNewPaddock = false;
     drawPoints = [];
+    endEditMode();
     endMoveAreaMode();
     updateDrawUI(false);
     renderMap();
@@ -670,6 +693,14 @@ function initMap() {
   renderMap();
 }
 
+function endEditMode() {
+  editAreaMode = false;
+  editTarget = null;
+  const btn = document.getElementById("edit-area-btn");
+  if (btn) btn.textContent = "Redigera polygon";
+  document.getElementById("map-msg").textContent = "";
+  renderMap();
+}
 function endMoveAreaMode() {
   moveAreaMode = false;
   moveAreaPoints = [];
@@ -810,6 +841,34 @@ function updateDrawUI(active) {
   document.getElementById("draw-cancel").hidden = !active;
 }
 
+function startEditPolygon(boundaryRef, leafletPoly, target) {
+  if (editTarget && editTarget.cleanup) editTarget.cleanup();
+  editTarget = { ...target };
+  leafletPoly.editing = leafletPoly.editing || {};
+  document.getElementById("map-msg").textContent = "Dra h\u00f6rnen f\u00f6r att justera polygonen. \u00c4ndringar sparas automatiskt. Tryck Klar n\u00e4r du \u00e4r klar.";
+  const markers = boundaryRef.map((pt, i) => {
+    const mk = L.marker(pt, { draggable: true, icon: L.divIcon({ className: "edit-vertex", iconSize: [12, 12] }) });
+    mk.on("drag", () => {
+      const pos = mk.getLatLng();
+      boundaryRef[i] = [Math.round(pos.lat * 1e6) / 1e6, Math.round(pos.lng * 1e6) / 1e6];
+      leafletPoly.setLatLngs(boundaryRef);
+    });
+    mk.on("dragend", () => {
+      if (target.type === "paddock") {
+        const p = paddockById(target.id);
+        p.boundary = boundaryRef.map(pt => [pt[0], pt[1]]);
+        p.sizeHa = polygonAreaHa(p.boundary);
+      } else {
+        const m = state.moves.find(x => x.id === target.id);
+        if (m) { m.areaBoundary = boundaryRef.map(pt => [pt[0], pt[1]]); m.sizeHa = polygonAreaHa(m.areaBoundary); }
+      }
+      save();
+    });
+    mk.addTo(mapLayers);
+    return mk;
+  });
+  editTarget.cleanup = () => markers.forEach(mk => mapLayers.removeLayer(mk));
+}
 function zoomToPaddock(paddockId) {
   if (!mapInstance) return;
   const p = paddockById(paddockId);
@@ -953,7 +1012,7 @@ function renderMap() {
   const bounds = [];
   for (const p of state.paddocks) {
     if (!p.boundary) continue;
-    const poly = L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15, interactive: !drawing })
+    const poly = L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15, interactive: !drawing || editAreaMode })
       .bindPopup("<strong>" + esc(p.name) + "</strong>" + (p.sizeHa != null ? "<br>" + p.sizeHa + " ha" : "") + "<br>Djurdagar totalt: " + paddockAnimalDays(p.id));
     if (deleting) {
       poly.on("click", () => {
@@ -966,6 +1025,8 @@ function renderMap() {
           document.getElementById("map-msg").textContent = "Gr\u00e4nsen f\u00f6r " + p.name + " \u00e4r raderad.";
         }
       });
+    } else if (editAreaMode) {
+      poly.on("click", () => startEditPolygon(p.boundary, poly, { type: "paddock", id: p.id }));
     } else {
       poly.on("click", () => {
         const sel = document.getElementById("map-paddock");
@@ -987,9 +1048,11 @@ function renderMap() {
             ? " (betar nu)"
             : " \u00b7 Vila: " + info.restDays + " dag" + (info.restDays === 1 ? "" : "ar") + (info.restOngoing ? " (p\u00e5g\u00e5r)" : ""))
       : "";
-    const area = L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: !drawing })
+    const area = L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: !drawing || editAreaMode })
       .bindPopup(esc(herdName(m.herdId)) + ": " + formatArea(m.sizeHa) + "<br>" + fmtDate(m.date) + (restText ? "<br>" + restText : "") + "<br>Djurdagar: " + moveAnimalDays(m));
-    if (deleting) {
+    if (editAreaMode && !deleting) {
+      area.on("click", () => startEditPolygon(m.areaBoundary, area, { type: "move", id: m.id }));
+    } else if (deleting) {
       area.on("click", () => {
         if (window.confirm("Ta bort flytten " + fmtDate(m.date) + " (" + herdName(m.herdId) + ") och dess yta? Flytten raderas \u00e4ven ur statistiken.")) {
           state.moves = state.moves.filter(x => x.id !== m.id);
