@@ -595,6 +595,7 @@ let deleteAreaMode = false;
 let editAreaMode = false;
 let editScope = "paddocks";
 let editTarget = null;
+let editFromMoveId = null;
 
 const MAP_LAYERS = {
   karta: {
@@ -693,7 +694,23 @@ function initMap() {
     renderMap();
   });
   document.getElementById("edit-area-btn").addEventListener("click", () => {
-    if (editAreaMode) { endEditMode(); return; }
+    if (editAreaMode) {
+      const fromMove = editFromMoveId;
+      if (editTarget && editTarget.dirty) commitEdit();
+      editFromMoveId = null;
+      endEditMode();
+      if (fromMove) {
+        const mv = document.getElementById("moves");
+        if (mv && mv.dataset.editMoveId === fromMove) delete mv.dataset.editMoveId;
+        renderMoves();
+        showTab("moves");
+        document.getElementById("move-msg").textContent = "Flyttens yta är sparad.";
+        setTimeout(() => { const el = document.getElementById("move-msg"); if (el && el.textContent === "Flyttens yta är sparad.") el.textContent = ""; }, 4000);
+      } else {
+        render();
+      }
+      return;
+    }
     editScope = currentTab === "moves" ? "moves" : "paddocks";
     editAreaMode = !editAreaMode;
     if (!editAreaMode) return;
@@ -1171,6 +1188,7 @@ function startEditMoveAreaMap(moveId) {
   endMoveAreaMode();
   updateDrawUI(false);
   editAreaMode = true;
+  editFromMoveId = moveId;
   const btn = document.getElementById("edit-area-btn");
   if (btn) btn.textContent = "Spara";
   document.getElementById("draw-cancel").hidden = false;
