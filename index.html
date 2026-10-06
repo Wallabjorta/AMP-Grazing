@@ -198,6 +198,10 @@ td.num { text-align: center; }
 .rest-badge .b-rest { color: #7a4a0e; border: 2px solid #c47f17; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; margin-top: 2px; }
 .rest-badge .b-rest.ongoing { border-style: dashed; }
 #map-canvas .leaflet-control-zoom { display: flex; flex-direction: column; }
+.map-layer-switch { display: flex; gap: 2px; background: var(--card); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+.map-layer-btn { border: 0; background: transparent; color: var(--text); font: inherit; font-size: 0.78rem; padding: 5px 9px; cursor: pointer; }
+.map-layer-btn:hover { background: rgba(0,0,0,0.06); }
+.map-layer-btn.active { background: var(--green); color: #fff; font-weight: 600; }
 .leaflet-container { font: inherit; }
 footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20px; }
 @media (max-width: 600px) {
@@ -587,14 +591,85 @@ let editAreaMode = false;
 let editScope = "paddocks";
 let editTarget = null;
 
+const MAP_LAYERS = {
+  karta: {
+    label: "Karta",
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  },
+  terrang: {
+    label: "Terräng",
+    url: "https://tile.opentopomap.org/{z}/{x}/{y}.png",
+    maxZoom: 17,
+    attribution: 'Kartdata &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bidragsgivare, SRTM | Kartstil: <a href="https://opentopomap.org/">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
+  },
+  satellit: {
+    label: "Satellit",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    maxZoom: 19,
+    attribution: "Satellitbilder &copy; Esri, Maxar, Earthstar Geographics"
+  }
+};
+const MAP_LAYER_KEY = "amp-grazing-maplayer";
+let mapLayerControls = {};
+
+function getSavedMapLayer() {
+  try {
+    const v = localStorage.getItem(MAP_LAYER_KEY);
+    if (v && MAP_LAYERS[v]) return v;
+  } catch (err) {}
+  return "karta";
+}
+
+function setBaseLayer(mapId, layerId) {
+  const ctrl = mapLayerControls[mapId];
+  if (!ctrl) return;
+  const def = MAP_LAYERS[layerId];
+  if (!def) return;
+  Object.values(ctrl.layers).forEach(l => { if (ctrl.map.hasLayer(l)) ctrl.map.removeLayer(l); });
+  if (!ctrl.layers[layerId]) {
+    ctrl.layers[layerId] = L.tileLayer(def.url, { maxZoom: def.maxZoom, attribution: def.attribution });
+  }
+  ctrl.layers[layerId].addTo(ctrl.map);
+  ctrl.current = layerId;
+  ctrl.buttons.forEach(b => b.classList.toggle("active", b.dataset.layer === layerId));
+  try { localStorage.setItem(MAP_LAYER_KEY, layerId); } catch (err) {}
+}
+
+function applyBaseLayers(map, mapId) {
+  const saved = getSavedMapLayer();
+  const layers = {};
+  Object.keys(MAP_LAYERS).forEach(id => {
+    layers[id] = L.tileLayer(MAP_LAYERS[id].url, { maxZoom: MAP_LAYERS[id].maxZoom, attribution: MAP_LAYERS[id].attribution });
+  });
+  layers[saved].addTo(map);
+  const ctrl = { map, layers, current: saved, buttons: [] };
+  mapLayerControls[mapId] = ctrl;
+  const box = L.control({ position: "topright" });
+  box.onAdd = () => {
+    const div = L.DomUtil.create("div", "map-layer-switch leaflet-bar");
+    Object.keys(MAP_LAYERS).forEach(id => {
+      const btn = L.DomUtil.create("button", "map-layer-btn" + (id === saved ? " active" : ""), div);
+      btn.textContent = MAP_LAYERS[id].label;
+      btn.dataset.layer = id;
+      L.DomEvent.on(btn, "click", e => {
+        L.DomEvent.stopPropagation(e);
+        L.DomEvent.preventDefault(e);
+        setBaseLayer(mapId, id);
+      });
+      ctrl.buttons.push(btn);
+    });
+    return div;
+  };
+  box.addTo(map);
+}
+
 function initMap() {
   const canvas = document.getElementById("map-canvas");
   if (!canvas || mapInstance) return;
   mapInstance = L.map(canvas).setView([62.0, 15.0], 5);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-  }).addTo(mapInstance);
+  applyBaseLayers(mapInstance, "main");
   mapLayers = L.layerGroup().addTo(mapInstance);
   mapInstance.on("click", e => {
     if (deleteAreaMode) return;
@@ -822,10 +897,7 @@ function initMoveAreaMap() {
   const canvas = document.getElementById("movearea-canvas");
   if (!canvas || moveAreaMap) return;
   moveAreaMap = L.map(canvas).setView([62.0, 15.0], 5);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-  }).addTo(moveAreaMap);
+  applyBaseLayers(moveAreaMap, "movearea");
   moveAreaMapLayers = L.layerGroup().addTo(moveAreaMap);
   moveAreaMap.on("click", e => {
     moveAreaPagePoints.push(snapPoint(e.latlng, moveAreaMap));
