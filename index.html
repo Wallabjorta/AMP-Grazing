@@ -175,6 +175,8 @@ td.num { text-align: center; }
 .grid .span { grid-column: 1 / -1; }
 .grid hr { grid-column: 1 / -1; }
 #map-canvas, #movearea-canvas { height: 65vh; min-height: 350px; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 12px; }
+#movearea-map-wrap { position: relative; }
+.map-float-save { position: absolute; bottom: 18px; right: 14px; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
 #print-report { display: none; }
 #print-report .pr-page { page-break-after: always; }
 #print-report .pr-map { width: 100%; height: auto; border: 1px solid #999; }
@@ -314,7 +316,10 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
         <button type="button" id="movearea2-locate" class="secondary">Min position</button>
       </form>
       <p class="note" id="movearea-msg"></p>
-      <div id="movearea-canvas"></div>
+      <div id="movearea-map-wrap">
+        <div id="movearea-canvas"></div>
+        <button type="button" id="movearea-save-float" class="primary map-float-save" hidden>Spara flytt</button>
+      </div>
       <p class="note">Klicka ut hörnen för området djuren får – klick nära en befintlig gräns snapmar automatiskt till den. Tryck Spara flytt när du är klar.</p>
     </div>
   </section>
@@ -927,6 +932,7 @@ function initMoveAreaMap() {
     }, () => { msg.textContent = "Kunde inte h\u00e4mta din position."; });
   });
   document.getElementById("movearea2-save").addEventListener("click", saveMoveAreaFromPage);
+  document.getElementById("movearea-save-float").addEventListener("click", saveMoveAreaFromPage);
   document.getElementById("movearea2-paddock").addEventListener("change", e => {
     const p = paddockById(e.target.value);
     if (p && p.boundary && p.boundary.length >= 3) {
@@ -937,6 +943,8 @@ function initMoveAreaMap() {
 
 function renderMoveAreaPage() {
   if (!moveAreaMapLayers) return;
+  const floatSave = document.getElementById("movearea-save-float");
+  if (floatSave) floatSave.hidden = moveAreaPagePoints.length < 3;
   moveAreaMapLayers.clearLayers();
   for (const p of state.paddocks) {
     if (p.boundary) {
@@ -984,6 +992,8 @@ function saveMoveAreaFromPage() {
   save();
   moveAreaPagePoints = [];
   renderMoveAreaPage();
+  const floatSave = document.getElementById("movearea-save-float");
+  if (floatSave) floatSave.hidden = true;
   msg.textContent = "Flytt sparad: " + herdName(herdId) + " f\u00e5tt " + sizeHa + " ha p\u00e5 " + paddockName(padId) + fromStr + ".";
   render();
   moveAreaMap.fitBounds(L.latLngBounds(boundary), { padding: [40, 40], maxZoom: 17 });
