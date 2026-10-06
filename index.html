@@ -174,7 +174,7 @@ td.num { text-align: center; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: end; }
 .grid .span { grid-column: 1 / -1; }
 .grid hr { grid-column: 1 / -1; }
-#map-canvas { height: 65vh; min-height: 350px; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 12px; }
+#map-canvas, #movearea-canvas { height: 65vh; min-height: 350px; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 12px; }
 #print-report { display: none; }
 #print-report .pr-page { page-break-after: always; }
 #print-report .pr-map { width: 100%; height: auto; border: 1px solid #999; }
@@ -289,6 +289,29 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
       <p class="note" id="map-msg"></p>
       <div id="map-canvas"></div>
       <p class="note">Importera ett GPX-spår (t.ex. om du gått eller ridit runt markens område med GPS på) så ritas gränsen automatiskt och markens hektar räknas ut. Har filen flera spår tilldelas de olika marker som saknar gräns. Du ritar gränsen själv med plus-knappen bredvid varje mark under fliken Betesmarker.</p>
+    </div>
+  </section>
+  <section id="movearea">
+    <div class="card">
+      <h2>Rita flyttyta</h2>
+      <form class="inline" onsubmit="return false">
+        <label>Mark
+          <select id="movearea2-paddock"><option value="">V\u00e4lj mark\u2026</option></select>
+        </label>
+        <label>Djurgrupp
+          <select id="movearea2-herd"></select>
+        </label>
+        <label>Datum
+          <input type="date" id="movearea2-date">
+        </label>
+        <button type="button" id="movearea2-save" class="primary">Spara flytt</button>
+        <button type="button" id="movearea2-undo" class="secondary">\u00c5ngra punkt</button>
+        <button type="button" id="movearea2-cancel" class="ghost">Avbryt</button>
+        <button type="button" id="movearea2-locate" class="secondary">Min position</button>
+      </form>
+      <p class="note" id="movearea-msg"></p>
+      <div id="movearea-canvas"></div>
+      <p class="note">Klicka ut h\u00f6rnen f\u00f6r omr\u00e5det djuren f\u00e5tt \u2013 klick n\u00e4ra en befintlig gr\u00e4ns snapmar automatiskt till den. Tryck Spara flytt n\u00e4r du \u00e4r klar.</p>
     </div>
   </section>
   <section id="data"></section>
@@ -791,6 +814,150 @@ async function searchPlace() {
   }
 }
 
+let moveAreaMap = null;
+let moveAreaMapLayers = null;
+let moveAreaPagePoints = [];
+
+function initMoveAreaMap() {
+  const canvas = document.getElementById("movearea-canvas");
+  if (!canvas || moveAreaMap) return;
+  moveAreaMap = L.map(canvas).setView([62.0, 15.0], 5);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(moveAreaMap);
+  moveAreaMapLayers = L.layerGroup().addTo(moveAreaMap);
+  moveAreaMap.on("click", e => {
+    moveAreaPagePoints.push(snapPoint(e.latlng, moveAreaMap));
+    renderMoveAreaPage();
+  });
+  document.getElementById("movearea2-undo").addEventListener("click", () => {
+    if (moveAreaPagePoints.length) {
+      moveAreaPagePoints.pop();
+      renderMoveAreaPage();
+    }
+  });
+  document.getElementById("movearea2-cancel").addEventListener("click", () => {
+    moveAreaPagePoints = [];
+    renderMoveAreaPage();
+    showTab("moves");
+  });
+  document.getElementById("movearea2-locate").addEventListener("click", () => {
+    const msg = document.getElementById("movearea-msg");
+    if (!navigator.geolocation) { msg.textContent = "Din webbl\u00e4sare st\u00f6djer inte platstj\u00e4nster."; return; }
+    msg.textContent = "H\u00e4mtar din position\u2026";
+    navigator.geolocation.getCurrentPosition(pos => {
+      const ll = [pos.coords.latitude, pos.coords.longitude];
+      const acc = Math.round(pos.coords.accuracy || 0);
+      moveAreaMap.setView(ll, Math.max(moveAreaMap.getZoom(), 16));
+      L.circle(ll, { radius: Math.max(acc, 20), color: "#2563eb", weight: 1, fillOpacity: 0.1 }).addTo(moveAreaMapLayers);
+      msg.textContent = "Visar din position (±" + acc + " m).";
+    }, () => { msg.textContent = "Kunde inte h\u00e4mta din position."; });
+  });
+  document.getElementById("movearea2-save").addEventListener("click", saveMoveAreaFromPage);
+  document.getElementById("movearea2-paddock").addEventListener("change", e => {
+    const p = paddockById(e.target.value);
+    if (p && p.boundary && p.boundary.length >= 3) {
+      moveAreaMap.fitBounds(L.latLngBounds(p.boundary), { padding: [40, 40], maxZoom: 17 });
+    }
+  });
+}
+
+function renderMoveAreaPage() {
+  if (!moveAreaMapLayers) return;
+  moveAreaMapLayers.clearLayers();
+  for (const p of state.paddocks) {
+    if (p.boundary) {
+      L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15, interactive: false })
+        .addTo(moveAreaMapLayers);
+    }
+  }
+  for (const m of state.moves) {
+    if (!m.areaBoundary) continue;
+    L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: false })
+      .addTo(moveAreaMapLayers);
+    const badge = moveAreaBadge(moveAreaRestInfo(m));
+    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: false }).addTo(moveAreaMapLayers);
+  }
+  if (moveAreaPagePoints.length) {
+    L.polygon(moveAreaPagePoints, { color: "#c47f17", weight: 2, dashArray: "6 4", fillOpacity: 0.15 }).addTo(moveAreaMapLayers);
+    moveAreaPagePoints.forEach(pt => L.circleMarker(pt, { radius: 6, color: "#c47f17", fillOpacity: 1 }).addTo(moveAreaMapLayers));
+  }
+}
+
+function saveMoveAreaFromPage() {
+  const msg = document.getElementById("movearea-msg");
+  const herdId = document.getElementById("movearea2-herd").value;
+  const padId = document.getElementById("movearea2-paddock").value;
+  const dateVal = document.getElementById("movearea2-date").value;
+  if (!herdId) { msg.textContent = "V\u00e4lj en djurgrupp."; return; }
+  if (!padId) { msg.textContent = "V\u00e4lj marken djuren st\u00e5r i (eller flyttar till)."; return; }
+  if (moveAreaPagePoints.length < 3) { msg.textContent = "Rita minst tre h\u00f6rn f\u00f6r omr\u00e5det."; return; }
+  if (!dateVal) { msg.textContent = "V\u00e4lj ett datum f\u00f6r flytten."; return; }
+  const boundary = moveAreaPagePoints.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6]);
+  const sizeHa = polygonAreaHa(boundary);
+  const from = herdPaddockIdAt(herdId, dateVal, nowTime());
+  const fromStr = from && from !== padId ? " fr\u00e5n " + paddockName(from) : "";
+  state.moves.push({
+    id: uid(),
+    herdId,
+    fromPaddockId: from,
+    toPaddockId: padId,
+    date: dateVal,
+    time: nowTime(),
+    note: "Ritad p\u00e5 karta",
+    sizeHa,
+    areaBoundary: boundary
+  });
+  save();
+  moveAreaPagePoints = [];
+  renderMoveAreaPage();
+  msg.textContent = "Flytt sparad: " + herdName(herdId) + " f\u00e5tt " + sizeHa + " ha p\u00e5 " + paddockName(padId) + fromStr + ".";
+  render();
+  moveAreaMap.fitBounds(L.latLngBounds(boundary), { padding: [40, 40], maxZoom: 17 });
+}
+
+function latestMoveAreaBoundary() {
+  for (let i = state.moves.length - 1; i >= 0; i--) {
+    const m = state.moves[i];
+    if (m.areaBoundary && m.areaBoundary.length >= 3) return m.areaBoundary;
+  }
+  return null;
+}
+
+function startMoveAreaPage(herdId) {
+  initMoveAreaMap();
+  if (!moveAreaMap) return;
+  const padSel = document.getElementById("movearea2-paddock");
+  padSel.innerHTML = '<option value="">V\u00e4lj mark\u2026</option>' +
+    state.paddocks.map(p => '<option value="' + p.id + '">' + esc(p.name) + (p.boundary ? " \u2713" : "") + '</option>').join("");
+  const latest = latestMoveAreaBoundary();
+  const latestMove = state.moves.slice().reverse().find(m => m.areaBoundary && m.areaBoundary.length >= 3);
+  if (latestMove && latestMove.toPaddockId) {
+    padSel.value = latestMove.toPaddockId;
+  }
+  const herdSel = document.getElementById("movearea2-herd");
+  herdSel.innerHTML = state.herds.length
+    ? state.herds.map(h => '<option value="' + h.id + '">' + esc(h.name) + '</option>').join("")
+    : '<option value="">Inga djurgrupper</option>';
+  if (herdId) herdSel.value = herdId;
+  if (!herdSel.value && latestMove && latestMove.herdId) herdSel.value = latestMove.herdId;
+  document.getElementById("movearea2-date").value = todayIso();
+  moveAreaPagePoints = [];
+  showTab("movearea");
+  moveAreaMap.invalidateSize();
+  renderMoveAreaPage();
+  const msg = document.getElementById("movearea-msg");
+  if (latest) {
+    moveAreaMap.fitBounds(L.latLngBounds(latest), { padding: [40, 40], maxZoom: 17 });
+    msg.textContent = "Klicka ut h\u00f6rnen f\u00f6r omr\u00e5det djuren f\u00e5tt \u2013 klick n\u00e4ra en befintlig gr\u00e4ns snapmar automatiskt till den. Tryck Spara flytt n\u00e4r du \u00e4r klar.";
+  } else {
+    const anyPad = state.paddocks.find(p => p.boundary && p.boundary.length >= 3);
+    if (anyPad) moveAreaMap.fitBounds(L.latLngBounds(anyPad.boundary), { padding: [40, 40], maxZoom: 17 });
+    msg.textContent = "Ingen tidigare flyttyta hittades \u2013 klicka ut h\u00f6rnen f\u00f6r omr\u00e5det djuren f\u00e5tt och tryck Spara flytt n\u00e4r du \u00e4r klar.";
+  }
+}
+
 function startMoveAreaDraw(herdId) {
   initMap();
   if (!mapInstance) return;
@@ -1062,16 +1229,17 @@ function snapCandidates() {
   return polys;
 }
 
-function snapPoint(latlng) {
-  const pt = mapInstance.latLngToLayerPoint(latlng);
+function snapPoint(latlng, map) {
+  const map_ = map || mapInstance;
+  const pt = map_.latLngToLayerPoint(latlng);
   let best = null;
   const isTouch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
   let bestD = isTouch ? 32 : 14;
   for (const poly of snapCandidates()) {
     for (let i = 0; i < poly.length; i++) {
       const a = poly[i], b = poly[(i + 1) % poly.length];
-      const pa = mapInstance.latLngToLayerPoint(L.latLng(a[0], a[1]));
-      const pb = mapInstance.latLngToLayerPoint(L.latLng(b[0], b[1]));
+      const pa = map_.latLngToLayerPoint(L.latLng(a[0], a[1]));
+      const pb = map_.latLngToLayerPoint(L.latLng(b[0], b[1]));
       const dx = pb.x - pa.x, dy = pb.y - pa.y;
       const lenSq = dx * dx + dy * dy || 1;
       const t = Math.max(0, Math.min(1, ((pt.x - pa.x) * dx + (pt.y - pa.y) * dy) / lenSq));
@@ -1079,7 +1247,7 @@ function snapPoint(latlng) {
       const d = Math.hypot(pt.x - projX, pt.y - projY);
       if (d < bestD) {
         bestD = d;
-        best = mapInstance.layerPointToLatLng([projX, projY]);
+        best = map_.layerPointToLatLng([projX, projY]);
       }
     }
   }
@@ -2384,6 +2552,9 @@ function showTab(tab) {
   if (tab === "map" && mapInstance) {
     setTimeout(() => mapInstance.invalidateSize(), 50);
   }
+  if (tab === "movearea") {
+    setTimeout(() => { if (moveAreaMap) moveAreaMap.invalidateSize(); }, 50);
+  }
 }
 
 document.addEventListener("change", e => {
@@ -2449,7 +2620,7 @@ document.addEventListener("click", e => {
   }
   if (action === "draw-movearea") {
     const herdSel = document.querySelector('#move-form select[name="herdId"]');
-    startMoveAreaDraw(herdSel ? herdSel.value : "");
+    startMoveAreaPage(herdSel ? herdSel.value : "");
     return;
   }
   if (action === "draw-new-paddock") {
