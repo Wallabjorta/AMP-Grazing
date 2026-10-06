@@ -705,10 +705,10 @@ function initMap() {
     updateDrawUI(false);
     renderMap();
     document.getElementById("draw-cancel").hidden = false;
-    document.getElementById("edit-area-btn").textContent = "Klar";
+    document.getElementById("edit-area-btn").textContent = "Spara";
     document.getElementById("map-msg").textContent = editScope === "moves"
-      ? "Redigera flyttytor: klicka p\u00e5 en flyttyta f\u00f6r att g\u00f6ra dess h\u00f6rn dragbara. Tryck Klar n\u00e4r du \u00e4r klar."
-      : "Redigera betesmarker: klicka p\u00e5 en markgr\u00e4ns f\u00f6r att g\u00f6ra dess h\u00f6rn dragbara. Tryck Klar n\u00e4r du \u00e4r klar.";
+      ? "Redigera flyttytor: klicka p\u00e5 en flyttyta f\u00f6r att g\u00f6ra dess h\u00f6rn dragbara. Tryck Spara n\u00e4r du \u00e4r klar."
+      : "Redigera betesmarker: klicka p\u00e5 en markgr\u00e4ns f\u00f6r att g\u00f6ra dess h\u00f6rn dragbara. Tryck Spara n\u00e4r du \u00e4r klar.";
   });
   document.getElementById("delete-area-btn").addEventListener("click", () => {
     deleteAreaMode = !deleteAreaMode;
@@ -1112,16 +1112,30 @@ function updateDrawUI(active) {
 let editRenderedPolys = {};
 let deleteVertexMode = false;
 function persistEdit(target, boundaryRef) {
-  const pts = boundaryRef.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6]);
-  if (target.type === "paddock") {
-    const p = paddockById(target.id);
-    p.boundary = pts;
-    p.sizeHa = polygonAreaHa(pts);
+  if (editTarget) { editTarget.dirty = true; editTarget.boundaryRef = boundaryRef; editTarget.editOf = target; }
+  document.getElementById("map-msg").textContent = (target.type === "paddock" ? "Markgränsen" : "Flyttytan") + " har ändrats – tryck Spara för att spara ändringarna, eller Avbryt för att ångra.";
+}
+
+function restoreEditOriginal() {
+  if (!editTarget || !editTarget.dirty || !editTarget.boundaryRef || !editTarget.original) return;
+  editTarget.boundaryRef.splice(0, editTarget.boundaryRef.length, ...editTarget.original.map(p => p.slice()));
+  editTarget.dirty = false;
+}
+
+function commitEdit() {
+  if (!editTarget || !editTarget.dirty || !editTarget.boundaryRef || editTarget.boundaryRef.length < 3) return false;
+  const t = editTarget.editOf;
+  const pts = editTarget.boundaryRef.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6]);
+  if (t.type === "paddock") {
+    const p = paddockById(t.id);
+    if (p) { p.boundary = pts; p.sizeHa = polygonAreaHa(pts); }
   } else {
-    const m = state.moves.find(x => x.id === target.id);
+    const m = state.moves.find(x => x.id === t.id);
     if (m) { m.areaBoundary = pts; m.sizeHa = polygonAreaHa(pts); }
   }
+  editTarget.dirty = false;
   save();
+  return true;
 }
 let editCycleList = null;
 let editCycleIndex = -1;
@@ -1158,7 +1172,7 @@ function startEditMoveAreaMap(moveId) {
   updateDrawUI(false);
   editAreaMode = true;
   const btn = document.getElementById("edit-area-btn");
-  if (btn) btn.textContent = "Klar";
+  if (btn) btn.textContent = "Spara";
   document.getElementById("draw-cancel").hidden = false;
   const sel = document.getElementById("map-paddock");
   if (sel && m.toPaddockId) sel.value = m.toPaddockId;
@@ -1193,8 +1207,10 @@ function selectPolygonAt(latlng, clickedTarget) {
 function startEditPolygon(boundaryRef, leafletPoly, target) {
   if (editTarget && editTarget.cleanup) editTarget.cleanup();
   editTarget = { ...target };
-  document.getElementById("map-msg").textContent = (target.type === "paddock" ? "Redigerar markgr\u00e4ns" : "Redigerar flyttyta") + ": dra h\u00f6rnen f\u00f6r att flytta \u2013 dra de sm\u00e5 vita mittpunkterna p\u00e5 kanterna f\u00f6r att l\u00e4gga till nya h\u00f6rn. Med Radera h\u00f6rn-knappen aktiverad kan du klicka bort h\u00f6rn. Klicka p\u00e5 samma st\u00e4lle igen f\u00f6r att v\u00e4xla till underliggande polygon. Tryck Klar n\u00e4r du \u00e4r klar.";
+  document.getElementById("map-msg").textContent = (target.type === "paddock" ? "Redigerar markgr\u00e4ns" : "Redigerar flyttyta") + ": dra h\u00f6rnen f\u00f6r att flytta \u2013 dra de sm\u00e5 vita mittpunkterna p\u00e5 kanterna f\u00f6r att l\u00e4gga till nya h\u00f6rn. Med Radera h\u00f6rn-knappen aktiverad kan du klicka bort h\u00f6rn. Klicka p\u00e5 samma st\u00e4lle igen f\u00f6r att v\u00e4xla till underliggande polygon. Tryck Spara n\u00e4r du \u00e4r klar.";
   document.getElementById("vertex-delete-btn").hidden = false;
+  editTarget.original = boundaryRef.map(p => p.slice());
+  editTarget.dirty = false;
   const layers = { vertices: [], midpoints: [] };
   function refreshMidpoints() {
     layers.midpoints.forEach(mk => mapLayers.removeLayer(mk));
