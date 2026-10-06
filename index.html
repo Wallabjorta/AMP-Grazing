@@ -53,6 +53,8 @@ nav button {
   font-size: 0.95rem;
 }
 nav button.active { background: var(--bg); color: var(--text); font-weight: 600; }
+.edit-vertex { background: var(--accent, #2e6b34); border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 3px rgba(0,0,0,.5); cursor: move; }
+.edit-midpoint { background: #fff; border: 2px solid var(--accent, #2e6b34); border-radius: 50%; opacity: 0.85; box-shadow: 0 0 2px rgba(0,0,0,.4); cursor: copy; }
 main { max-width: 900px; margin: 0 auto; padding: 20px; }
 section { display: none; }
 section.active { display: block; }
@@ -172,7 +174,7 @@ td.num { text-align: center; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: end; }
 .grid .span { grid-column: 1 / -1; }
 .grid hr { grid-column: 1 / -1; }
-#map-canvas { height: 65vh; min-height: 350px; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 12px; }
+#map-canvas, #movearea-canvas { height: 65vh; min-height: 350px; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 12px; }
 #print-report { display: none; }
 #print-report .pr-page { page-break-after: always; }
 #print-report .pr-map { width: 100%; height: auto; border: 1px solid #999; }
@@ -266,8 +268,10 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
           <select id="map-paddock"><option value="">Välj mark…</option></select>
         </label>
         <button type="button" id="draw-save" class="primary" hidden>Spara gräns</button>
+        <button type="button" id="draw-undo" class="secondary" hidden>Ångra punkt</button>
+        <button type="button" id="vertex-delete-btn" class="secondary" hidden>Radera hörn</button>
         <button type="button" id="draw-cancel" class="ghost" hidden>Avbryt</button>
-        <button type="button" id="movearea-btn" class="secondary">Rita flyttyta</button>
+        <button type="button" id="edit-area-btn" class="secondary">Redigera polygon</button>
         <button type="button" id="delete-area-btn" class="secondary">Radera polygon</button>
         <button type="button" id="movearea-save" class="primary" hidden>Spara flytt</button>
         <label id="movearea-herd-label" hidden>Djurgrupp
@@ -285,6 +289,29 @@ footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20
       <p class="note" id="map-msg"></p>
       <div id="map-canvas"></div>
       <p class="note">Importera ett GPX-spår (t.ex. om du gått eller ridit runt markens område med GPS på) så ritas gränsen automatiskt och markens hektar räknas ut. Har filen flera spår tilldelas de olika marker som saknar gräns. Du ritar gränsen själv med plus-knappen bredvid varje mark under fliken Betesmarker.</p>
+    </div>
+  </section>
+  <section id="movearea">
+    <div class="card">
+      <h2>Rita flyttyta</h2>
+      <form class="inline" onsubmit="return false">
+        <label>Mark
+          <select id="movearea2-paddock"><option value="">V\u00e4lj mark\u2026</option></select>
+        </label>
+        <label>Djurgrupp
+          <select id="movearea2-herd"></select>
+        </label>
+        <label>Datum
+          <input type="date" id="movearea2-date">
+        </label>
+        <button type="button" id="movearea2-save" class="primary">Spara flytt</button>
+        <button type="button" id="movearea2-undo" class="secondary">\u00c5ngra punkt</button>
+        <button type="button" id="movearea2-cancel" class="ghost">Avbryt</button>
+        <button type="button" id="movearea2-locate" class="secondary">Min position</button>
+      </form>
+      <p class="note" id="movearea-msg"></p>
+      <div id="movearea-canvas"></div>
+      <p class="note">Klicka ut h\u00f6rnen f\u00f6r omr\u00e5det djuren f\u00e5tt \u2013 klick n\u00e4ra en befintlig gr\u00e4ns snapmar automatiskt till den. Tryck Spara flytt n\u00e4r du \u00e4r klar.</p>
     </div>
   </section>
   <section id="data"></section>
@@ -551,11 +578,14 @@ function setupAuthUI() {
 
 let mapInstance = null;
 let mapLayers = null;
-let drawMode = false;
+let drawMode = false;let drawNewPaddock = false;
 let drawPoints = [];
 let moveAreaMode = false;
 let moveAreaPoints = [];
 let deleteAreaMode = false;
+let editAreaMode = false;
+let editScope = "paddocks";
+let editTarget = null;
 
 function initMap() {
   const canvas = document.getElementById("map-canvas");
@@ -573,16 +603,39 @@ function initMap() {
   });
   document.getElementById("draw-cancel").addEventListener("click", () => {
     drawMode = false;
+    drawNewPaddock = false;
     drawPoints = [];
+    editAreaMode = false;
+    editTarget = null;
     endMoveAreaMode();
     deleteAreaMode = false;
     updateDrawUI(false);
     renderMap();
   });
+  document.getElementById("edit-area-btn").addEventListener("click", () => {
+    if (editAreaMode) { endEditMode(); return; }
+    editScope = currentTab === "moves" ? "moves" : "paddocks";
+    editAreaMode = !editAreaMode;
+    if (!editAreaMode) return;
+    drawMode = false;
+    drawNewPaddock = false;
+    drawPoints = [];
+    endMoveAreaMode();
+    deleteAreaMode = false;
+    updateDrawUI(false);
+    renderMap();
+    document.getElementById("draw-cancel").hidden = false;
+    document.getElementById("edit-area-btn").textContent = "Klar";
+    document.getElementById("map-msg").textContent = editScope === "moves"
+      ? "Redigera flyttytor: klicka p\u00e5 en flyttyta f\u00f6r att g\u00f6ra dess h\u00f6rn dragbara. Tryck Klar n\u00e4r du \u00e4r klar."
+      : "Redigera betesmarker: klicka p\u00e5 en markgr\u00e4ns f\u00f6r att g\u00f6ra dess h\u00f6rn dragbara. Tryck Klar n\u00e4r du \u00e4r klar.";
+  });
   document.getElementById("delete-area-btn").addEventListener("click", () => {
     deleteAreaMode = !deleteAreaMode;
     drawMode = false;
+    drawNewPaddock = false;
     drawPoints = [];
+    endEditMode();
     endMoveAreaMode();
     updateDrawUI(false);
     renderMap();
@@ -594,38 +647,34 @@ function initMap() {
     }
   });
   document.getElementById("draw-save").addEventListener("click", () => {
-    const id = document.getElementById("map-paddock").value;
-    if (!id || drawPoints.length < 3) {
+    if (drawPoints.length < 3) {
       document.getElementById("map-msg").textContent = "Du beh\u00f6ver minst tre h\u00f6rn f\u00f6r att spara en gr\u00e4ns.";
       return;
     }
-    const p = paddockById(id);
+    const id = document.getElementById("map-paddock").value;
+    const p = drawNewPaddock ? { id: uid(), name: "", sizeHa: null } : paddockById(id);
+    if (!p) {
+      document.getElementById("map-msg").textContent = "V\u00e4lj en mark f\u00f6rst.";
+      return;
+    }
     p.boundary = drawPoints.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6]);
     p.sizeHa = polygonAreaHa(p.boundary);
+    if (drawNewPaddock) {
+      const name = prompt("Namn p\u00e5 den nya betesmarken:", "Ny betesmark");
+      if (name === null) {
+        document.getElementById("map-msg").textContent = "Gr\u00e4nsen sparades inte \u2013 tryck Spara gr\u00e4ns igen om du \u00e4ndrar dig.";
+        return;
+      }
+      p.name = name.trim() || "Ny betesmark";
+      state.paddocks.push(p);
+    }
     save();
     drawMode = false;
+    drawNewPaddock = false;
     drawPoints = [];
     updateDrawUI(false);
     document.getElementById("map-msg").textContent = "Gr\u00e4ns sparad f\u00f6r " + p.name + (p.sizeHa != null ? " (" + p.sizeHa + " ha)" : "") + ".";
     render();
-  });
-  document.getElementById("movearea-btn").addEventListener("click", () => {
-    const sel = document.getElementById("map-paddock");
-    if (!sel.value) { document.getElementById("map-msg").textContent = "V\u00e4lj marken djuren st\u00e5r i (eller flyttar till) f\u00f6rst."; return; }
-    const herdSel = document.getElementById("movearea-herd");
-    herdSel.innerHTML = state.herds.length
-      ? state.herds.map(h => '<option value="' + h.id + '">' + esc(h.name) + '</option>').join("")
-      : '<option value="">Inga djurgrupper</option>';
-    document.getElementById("movearea-herd-label").hidden = false;
-    document.getElementById("movearea-date-label").hidden = false;
-    document.getElementById("movearea-date").value = todayIso();
-    document.getElementById("movearea-btn").hidden = true;
-    document.getElementById("movearea-save").hidden = false;
-    document.getElementById("draw-cancel").hidden = false;
-    moveAreaMode = true;
-    moveAreaPoints = [];
-    renderMap();
-    document.getElementById("map-msg").textContent = "Rita omr\u00e5det djuren f\u00e5tt: klicka ut h\u00f6rnen \u2013 klick n\u00e4ra en befintlig gr\u00e4ns snapmar automatiskt till den, s\u00e5 att flyttytan passa precis inuti/s ansluten till marken. Tryck Spara flytt n\u00e4r du \u00e4r klar.";
   });
   document.getElementById("movearea-save").addEventListener("click", () => {
     const herdId = document.getElementById("movearea-herd").value;
@@ -654,19 +703,50 @@ function initMap() {
     document.getElementById("map-msg").textContent = "Flytt sparad: " + herdName(herdId) + " f\u00e5tt " + sizeHa + " ha p\u00e5 " + paddockName(padId) + fromStr + ".";
     render();
   });
+  document.getElementById("vertex-delete-btn").addEventListener("click", () => {
+    deleteVertexMode = !deleteVertexMode;
+    document.getElementById("vertex-delete-btn").classList.toggle("active", deleteVertexMode);
+    if (deleteVertexMode) {
+      document.getElementById("map-msg").textContent = "Radera hörn: klicka på ett hörn för att ta bort det (minst tre hörn måste finnas kvar). Tryck Radera hörn igen för att sluta.";
+    }
+    if (editTarget) startEditPolygonForTarget({ type: editTarget.type, id: editTarget.id });
+  });
+  document.getElementById("draw-undo").addEventListener("click", () => {
+    if (drawMode && drawPoints.length) {
+      drawPoints.pop();
+      renderDrawPreview();
+    } else if (moveAreaMode && moveAreaPoints.length) {
+      moveAreaPoints.pop();
+      renderMoveAreaPreview();
+    }
+  });
   document.getElementById("locate-btn").addEventListener("click", locateMe);
   document.getElementById("place-search-btn").addEventListener("click", searchPlace);
   document.getElementById("place-search").addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); searchPlace(); }
   });
+  document.getElementById("map-paddock").addEventListener("change", () => zoomToPaddock(document.getElementById("map-paddock").value));
   updateMapPaddockSelect();
   renderMap();
 }
 
+function endEditMode() {
+  editAreaMode = false;
+  editTarget = null;
+  deleteVertexMode = false;
+  const vdb = document.getElementById("vertex-delete-btn");
+  if (vdb) { vdb.hidden = true; vdb.classList.remove("active"); }
+  editCycleList = null;
+  editCycleIndex = -1;
+  const btn = document.getElementById("edit-area-btn");
+  if (btn) btn.textContent = "Redigera polygon";
+  document.getElementById("map-msg").textContent = "";
+  renderMap();
+}
 function endMoveAreaMode() {
   moveAreaMode = false;
   moveAreaPoints = [];
-  document.getElementById("movearea-btn").hidden = false;
+  document.getElementById("draw-undo").hidden = true;
   document.getElementById("movearea-save").hidden = true;
   document.getElementById("movearea-herd-label").hidden = true;
   document.getElementById("movearea-date-label").hidden = true;
@@ -734,6 +814,194 @@ async function searchPlace() {
   }
 }
 
+let moveAreaMap = null;
+let moveAreaMapLayers = null;
+let moveAreaPagePoints = [];
+
+function initMoveAreaMap() {
+  const canvas = document.getElementById("movearea-canvas");
+  if (!canvas || moveAreaMap) return;
+  moveAreaMap = L.map(canvas).setView([62.0, 15.0], 5);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(moveAreaMap);
+  moveAreaMapLayers = L.layerGroup().addTo(moveAreaMap);
+  moveAreaMap.on("click", e => {
+    moveAreaPagePoints.push(snapPoint(e.latlng, moveAreaMap));
+    renderMoveAreaPage();
+  });
+  document.getElementById("movearea2-undo").addEventListener("click", () => {
+    if (moveAreaPagePoints.length) {
+      moveAreaPagePoints.pop();
+      renderMoveAreaPage();
+    }
+  });
+  document.getElementById("movearea2-cancel").addEventListener("click", () => {
+    moveAreaPagePoints = [];
+    renderMoveAreaPage();
+    showTab("moves");
+  });
+  document.getElementById("movearea2-locate").addEventListener("click", () => {
+    const msg = document.getElementById("movearea-msg");
+    if (!navigator.geolocation) { msg.textContent = "Din webbl\u00e4sare st\u00f6djer inte platstj\u00e4nster."; return; }
+    msg.textContent = "H\u00e4mtar din position\u2026";
+    navigator.geolocation.getCurrentPosition(pos => {
+      const ll = [pos.coords.latitude, pos.coords.longitude];
+      const acc = Math.round(pos.coords.accuracy || 0);
+      moveAreaMap.setView(ll, Math.max(moveAreaMap.getZoom(), 16));
+      L.circle(ll, { radius: Math.max(acc, 20), color: "#2563eb", weight: 1, fillOpacity: 0.1 }).addTo(moveAreaMapLayers);
+      msg.textContent = "Visar din position (±" + acc + " m).";
+    }, () => { msg.textContent = "Kunde inte h\u00e4mta din position."; });
+  });
+  document.getElementById("movearea2-save").addEventListener("click", saveMoveAreaFromPage);
+  document.getElementById("movearea2-paddock").addEventListener("change", e => {
+    const p = paddockById(e.target.value);
+    if (p && p.boundary && p.boundary.length >= 3) {
+      moveAreaMap.fitBounds(L.latLngBounds(p.boundary), { padding: [40, 40], maxZoom: 17 });
+    }
+  });
+}
+
+function renderMoveAreaPage() {
+  if (!moveAreaMapLayers) return;
+  moveAreaMapLayers.clearLayers();
+  for (const p of state.paddocks) {
+    if (p.boundary) {
+      L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15, interactive: false })
+        .addTo(moveAreaMapLayers);
+    }
+  }
+  for (const m of state.moves) {
+    if (!m.areaBoundary) continue;
+    L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: false })
+      .addTo(moveAreaMapLayers);
+    const badge = moveAreaBadge(moveAreaRestInfo(m));
+    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: false }).addTo(moveAreaMapLayers);
+  }
+  if (moveAreaPagePoints.length) {
+    L.polygon(moveAreaPagePoints, { color: "#c47f17", weight: 2, dashArray: "6 4", fillOpacity: 0.15 }).addTo(moveAreaMapLayers);
+    moveAreaPagePoints.forEach(pt => L.circleMarker(pt, { radius: 6, color: "#c47f17", fillOpacity: 1 }).addTo(moveAreaMapLayers));
+  }
+}
+
+function saveMoveAreaFromPage() {
+  const msg = document.getElementById("movearea-msg");
+  const herdId = document.getElementById("movearea2-herd").value;
+  const padId = document.getElementById("movearea2-paddock").value;
+  const dateVal = document.getElementById("movearea2-date").value;
+  if (!herdId) { msg.textContent = "V\u00e4lj en djurgrupp."; return; }
+  if (!padId) { msg.textContent = "V\u00e4lj marken djuren st\u00e5r i (eller flyttar till)."; return; }
+  if (moveAreaPagePoints.length < 3) { msg.textContent = "Rita minst tre h\u00f6rn f\u00f6r omr\u00e5det."; return; }
+  if (!dateVal) { msg.textContent = "V\u00e4lj ett datum f\u00f6r flytten."; return; }
+  const boundary = moveAreaPagePoints.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6]);
+  const sizeHa = polygonAreaHa(boundary);
+  const from = herdPaddockIdAt(herdId, dateVal, nowTime());
+  const fromStr = from && from !== padId ? " fr\u00e5n " + paddockName(from) : "";
+  state.moves.push({
+    id: uid(),
+    herdId,
+    fromPaddockId: from,
+    toPaddockId: padId,
+    date: dateVal,
+    time: nowTime(),
+    note: "Ritad p\u00e5 karta",
+    sizeHa,
+    areaBoundary: boundary
+  });
+  save();
+  moveAreaPagePoints = [];
+  renderMoveAreaPage();
+  msg.textContent = "Flytt sparad: " + herdName(herdId) + " f\u00e5tt " + sizeHa + " ha p\u00e5 " + paddockName(padId) + fromStr + ".";
+  render();
+  moveAreaMap.fitBounds(L.latLngBounds(boundary), { padding: [40, 40], maxZoom: 17 });
+}
+
+function latestMoveAreaBoundary() {
+  for (let i = state.moves.length - 1; i >= 0; i--) {
+    const m = state.moves[i];
+    if (m.areaBoundary && m.areaBoundary.length >= 3) return m.areaBoundary;
+  }
+  return null;
+}
+
+function startMoveAreaPage(herdId) {
+  initMoveAreaMap();
+  if (!moveAreaMap) return;
+  const padSel = document.getElementById("movearea2-paddock");
+  padSel.innerHTML = '<option value="">V\u00e4lj mark\u2026</option>' +
+    state.paddocks.map(p => '<option value="' + p.id + '">' + esc(p.name) + (p.boundary ? " \u2713" : "") + '</option>').join("");
+  const latest = latestMoveAreaBoundary();
+  const latestMove = state.moves.slice().reverse().find(m => m.areaBoundary && m.areaBoundary.length >= 3);
+  if (latestMove && latestMove.toPaddockId) {
+    padSel.value = latestMove.toPaddockId;
+  }
+  const herdSel = document.getElementById("movearea2-herd");
+  herdSel.innerHTML = state.herds.length
+    ? state.herds.map(h => '<option value="' + h.id + '">' + esc(h.name) + '</option>').join("")
+    : '<option value="">Inga djurgrupper</option>';
+  if (herdId) herdSel.value = herdId;
+  if (!herdSel.value && latestMove && latestMove.herdId) herdSel.value = latestMove.herdId;
+  document.getElementById("movearea2-date").value = todayIso();
+  moveAreaPagePoints = [];
+  showTab("movearea");
+  moveAreaMap.invalidateSize();
+  renderMoveAreaPage();
+  const msg = document.getElementById("movearea-msg");
+  if (latest) {
+    moveAreaMap.fitBounds(L.latLngBounds(latest), { padding: [40, 40], maxZoom: 17 });
+    msg.textContent = "Klicka ut h\u00f6rnen f\u00f6r omr\u00e5det djuren f\u00e5tt \u2013 klick n\u00e4ra en befintlig gr\u00e4ns snapmar automatiskt till den. Tryck Spara flytt n\u00e4r du \u00e4r klar.";
+  } else {
+    const anyPad = state.paddocks.find(p => p.boundary && p.boundary.length >= 3);
+    if (anyPad) moveAreaMap.fitBounds(L.latLngBounds(anyPad.boundary), { padding: [40, 40], maxZoom: 17 });
+    msg.textContent = "Ingen tidigare flyttyta hittades \u2013 klicka ut h\u00f6rnen f\u00f6r omr\u00e5det djuren f\u00e5tt och tryck Spara flytt n\u00e4r du \u00e4r klar.";
+  }
+}
+
+function startMoveAreaDraw(herdId) {
+  initMap();
+  if (!mapInstance) return;
+  const sel = document.getElementById("map-paddock");
+  if (!sel.value) { showTab("map"); document.getElementById("map-msg").textContent = "V\u00e4lj marken djuren st\u00e5r i (eller flyttar till) f\u00f6rst \u2013 v\u00e4lj den i listan Mark och tryck sedan Rita flyttyta p\u00e5 karta igen."; return; }
+  const herdSel = document.getElementById("movearea-herd");
+  herdSel.innerHTML = state.herds.length
+    ? state.herds.map(h => '<option value="' + h.id + '">' + esc(h.name) + '</option>').join("")
+    : '<option value="">Inga djurgrupper</option>';
+  if (herdId) herdSel.value = herdId;
+  document.getElementById("movearea-herd-label").hidden = false;
+  document.getElementById("movearea-date-label").hidden = false;
+  document.getElementById("movearea-date").value = todayIso();
+  document.getElementById("movearea-save").hidden = false;
+  document.getElementById("draw-cancel").hidden = false;
+  document.getElementById("draw-undo").hidden = false;
+  showTab("map");
+  mapInstance.invalidateSize();
+  deleteAreaMode = false;
+  drawMode = false;
+  drawNewPaddock = false;
+  drawPoints = [];
+  moveAreaMode = true;
+  moveAreaPoints = [];
+  renderMap();
+  zoomToPaddock(document.getElementById("map-paddock").value);
+  document.getElementById("map-msg").textContent = "Rita omr\u00e5det djuren f\u00e5tt: klicka ut h\u00f6rnen \u2013 klick n\u00e4ra en befintlig gr\u00e4ns snapmar automatiskt till den, s\u00e5 att flyttytan passa precis inuti/s ansluten till marken. Tryck Spara flytt n\u00e4r du \u00e4r klar.";
+}
+function startDrawNewPaddock() {
+  initMap();
+  if (!mapInstance) return;
+  showTab("map");
+  mapInstance.invalidateSize();
+  deleteAreaMode = false;
+  endMoveAreaMode();
+  drawMode = true;
+  drawNewPaddock = true;
+  drawPoints = [];
+  const sel = document.getElementById("map-paddock");
+  if (sel) sel.value = "";
+  updateDrawUI(true);
+  renderMap();
+  document.getElementById("map-msg").textContent = "Klicka ut h\u00f6rnen f\u00f6r den nya betesmarken p\u00e5 kartan. Tryck Spara gr\u00e4ns n\u00e4r du \u00e4r klar \u2013 d\u00e5 f\u00e5r du namnge marken och hektar r\u00e4knas ut automatiskt.";
+}
 function startDrawBoundary(paddockId) {
   const p = paddockById(paddockId);
   if (!p) return;
@@ -746,16 +1014,143 @@ function startDrawBoundary(paddockId) {
   deleteAreaMode = false;
   endMoveAreaMode();
   drawMode = true;
+  drawNewPaddock = false;
   drawPoints = [];
   updateDrawUI(true);
   renderMap();
+  zoomToPaddock(paddockId);
   document.getElementById("map-msg").textContent = "Klicka ut gr\u00e4nsen f\u00f6r " + p.name + " p\u00e5 kartan \u2013 punkter n\u00e4ra befintliga gr\u00e4nser snapmar automatiskt (st\u00f6rre snap p\u00e5 mobil). Tryck Spara gr\u00e4ns n\u00e4r du \u00e4r klar.";
 }
 function updateDrawUI(active) {
   document.getElementById("draw-save").hidden = !active;
+  document.getElementById("draw-undo").hidden = !active;
   document.getElementById("draw-cancel").hidden = !active;
 }
 
+let editRenderedPolys = {};
+let deleteVertexMode = false;
+function persistEdit(target, boundaryRef) {
+  const pts = boundaryRef.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6]);
+  if (target.type === "paddock") {
+    const p = paddockById(target.id);
+    p.boundary = pts;
+    p.sizeHa = polygonAreaHa(pts);
+  } else {
+    const m = state.moves.find(x => x.id === target.id);
+    if (m) { m.areaBoundary = pts; m.sizeHa = polygonAreaHa(pts); }
+  }
+  save();
+}
+let editCycleList = null;
+let editCycleIndex = -1;
+function pointInPolygon(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+    const intersect = ((yi > pt[1]) !== (yj > pt[1])) && (pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+function polygonsAt(latlng) {
+  const hits = [];
+  for (const p of state.paddocks) {
+    if (p.boundary && p.boundary.length >= 3 && pointInPolygon([latlng.lat, latlng.lng], p.boundary)) hits.push({ type: "paddock", id: p.id });
+  }
+  for (const m of state.moves) {
+    if (m.areaBoundary && m.areaBoundary.length >= 3 && pointInPolygon([latlng.lat, latlng.lng], m.areaBoundary)) hits.push({ type: "move", id: m.id });
+  }
+  return hits;
+}
+function startEditPolygonForTarget(t) {
+  const key = t.type + ":" + t.id;
+  const rendered = editRenderedPolys[key] || L.polygon(t.type === "paddock" ? paddockById(t.id).boundary : state.moves.find(x => x.id === t.id).areaBoundary);
+  startEditPolygon(t.type === "paddock" ? paddockById(t.id).boundary : state.moves.find(x => x.id === t.id).areaBoundary, rendered, { type: t.type, id: t.id });
+}
+function selectPolygonAt(latlng, clickedTarget) {
+  let hits = polygonsAt(latlng);
+  const inScope = h => editScope === "moves" ? h.type === "move" : h.type === "paddock";
+  hits = hits.filter(inScope);
+  if (!hits.length) {
+    document.getElementById("map-msg").textContent = editScope === "moves"
+      ? "H\u00e4r finns inga flyttytor att redigera. G\u00e5 till fliken Betesmarker om du vill redigera markgr\u00e4nser."
+      : "H\u00e4r finns inga betesmarksgr\u00e4nser att redigera. G\u00e5 till fliken Flyttar om du vill redigera flyttytor.";
+    return;
+  }
+  const clickedIdx = hits.findIndex(h => h.type === clickedTarget.type && h.id === clickedTarget.id);
+  const sameSpot = editCycleList && editCycleList.length === hits.length && hits.every((h, i) => editCycleList[i].type === h.type && editCycleList[i].id === h.id);
+  if (!sameSpot) { editCycleIndex = clickedIdx; } else { editCycleIndex = (editCycleIndex + 1) % hits.length; }
+  editCycleList = hits;
+  startEditPolygonForTarget(hits[editCycleIndex]);
+}
+function startEditPolygon(boundaryRef, leafletPoly, target) {
+  if (editTarget && editTarget.cleanup) editTarget.cleanup();
+  editTarget = { ...target };
+  document.getElementById("map-msg").textContent = (target.type === "paddock" ? "Redigerar markgr\u00e4ns" : "Redigerar flyttyta") + ": dra h\u00f6rnen f\u00f6r att flytta \u2013 dra de sm\u00e5 vita mittpunkterna p\u00e5 kanterna f\u00f6r att l\u00e4gga till nya h\u00f6rn. Med Radera h\u00f6rn-knappen aktiverad kan du klicka bort h\u00f6rn. Klicka p\u00e5 samma st\u00e4lle igen f\u00f6r att v\u00e4xla till underliggande polygon. Tryck Klar n\u00e4r du \u00e4r klar.";
+  document.getElementById("vertex-delete-btn").hidden = false;
+  const layers = { vertices: [], midpoints: [] };
+  function refreshMidpoints() {
+    layers.midpoints.forEach(mk => mapLayers.removeLayer(mk));
+    layers.midpoints = [];
+    for (let i = 0; i < boundaryRef.length; i++) {
+      const a = boundaryRef[i], b = boundaryRef[(i + 1) % boundaryRef.length];
+      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      const mk = L.marker(mid, { draggable: !deleteVertexMode, icon: L.divIcon({ className: "edit-midpoint", iconSize: [10, 10] }) });
+      mk.on("dragend", () => {
+        const pos = mk.getLatLng();
+        boundaryRef.splice(i + 1, 0, [Math.round(pos.lat * 1e6) / 1e6, Math.round(pos.lng * 1e6) / 1e6]);
+        persistEdit(target, boundaryRef);
+        leafletPoly.setLatLngs(boundaryRef);
+        rebuildVertices();
+        refreshMidpoints();
+      });
+      mk.addTo(mapLayers);
+      layers.midpoints.push(mk);
+    }
+  }
+  function rebuildVertices() {
+    layers.vertices.forEach(mk => mapLayers.removeLayer(mk));
+    layers.vertices = boundaryRef.map((pt, i) => {
+      const mk = L.marker(pt, { draggable: !deleteVertexMode, icon: L.divIcon({ className: "edit-vertex", iconSize: [12, 12] }) });
+      mk.on("drag", () => {
+        const pos = mk.getLatLng();
+        boundaryRef[i] = [Math.round(pos.lat * 1e6) / 1e6, Math.round(pos.lng * 1e6) / 1e6];
+        leafletPoly.setLatLngs(boundaryRef);
+      });
+      mk.on("dragend", () => {
+        persistEdit(target, boundaryRef);
+        refreshMidpoints();
+      });
+      mk.on("click", () => {
+        if (!deleteVertexMode) return;
+        if (boundaryRef.length <= 3) {
+          document.getElementById("map-msg").textContent = "Polygonen m\u00e5ste ha minst tre h\u00f6rn.";
+          return;
+        }
+        boundaryRef.splice(i, 1);
+        persistEdit(target, boundaryRef);
+        leafletPoly.setLatLngs(boundaryRef);
+        rebuildVertices();
+        refreshMidpoints();
+      });
+      mk.addTo(mapLayers);
+      return mk;
+    });
+  }
+  rebuildVertices();
+  refreshMidpoints();
+  editTarget.cleanup = () => {
+    layers.vertices.forEach(mk => mapLayers.removeLayer(mk));
+    layers.midpoints.forEach(mk => mapLayers.removeLayer(mk));
+  };
+}
+
+function zoomToPaddock(paddockId) {
+  if (!mapInstance) return;
+  const p = paddockById(paddockId);
+  if (!p || !p.boundary || p.boundary.length < 3) return;
+  mapInstance.fitBounds(L.latLngBounds(p.boundary), { padding: [40, 40], maxZoom: 17 });
+}
 function updateMapPaddockSelect() {
   const sel = document.getElementById("map-paddock");
   if (!sel) return;
@@ -834,16 +1229,17 @@ function snapCandidates() {
   return polys;
 }
 
-function snapPoint(latlng) {
-  const pt = mapInstance.latLngToLayerPoint(latlng);
+function snapPoint(latlng, map) {
+  const map_ = map || mapInstance;
+  const pt = map_.latLngToLayerPoint(latlng);
   let best = null;
   const isTouch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
   let bestD = isTouch ? 32 : 14;
   for (const poly of snapCandidates()) {
     for (let i = 0; i < poly.length; i++) {
       const a = poly[i], b = poly[(i + 1) % poly.length];
-      const pa = mapInstance.latLngToLayerPoint(L.latLng(a[0], a[1]));
-      const pb = mapInstance.latLngToLayerPoint(L.latLng(b[0], b[1]));
+      const pa = map_.latLngToLayerPoint(L.latLng(a[0], a[1]));
+      const pb = map_.latLngToLayerPoint(L.latLng(b[0], b[1]));
       const dx = pb.x - pa.x, dy = pb.y - pa.y;
       const lenSq = dx * dx + dy * dy || 1;
       const t = Math.max(0, Math.min(1, ((pt.x - pa.x) * dx + (pt.y - pa.y) * dy) / lenSq));
@@ -851,7 +1247,7 @@ function snapPoint(latlng) {
       const d = Math.hypot(pt.x - projX, pt.y - projY);
       if (d < bestD) {
         bestD = d;
-        best = mapInstance.layerPointToLatLng([projX, projY]);
+        best = map_.layerPointToLatLng([projX, projY]);
       }
     }
   }
@@ -888,12 +1284,13 @@ function renderMap() {
   if (!mapInstance) return;
   updateMapPaddockSelect();
   mapLayers.clearLayers();
+  editRenderedPolys = {};
   const drawing = drawMode || moveAreaMode;
   const deleting = deleteAreaMode;
   const bounds = [];
   for (const p of state.paddocks) {
     if (!p.boundary) continue;
-    const poly = L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15, interactive: !drawing })
+    const poly = L.polygon(p.boundary, { color: "#2e6b34", weight: 2, fillOpacity: 0.15, interactive: !drawing || editAreaMode })
       .bindPopup("<strong>" + esc(p.name) + "</strong>" + (p.sizeHa != null ? "<br>" + p.sizeHa + " ha" : "") + "<br>Djurdagar totalt: " + paddockAnimalDays(p.id));
     if (deleting) {
       poly.on("click", () => {
@@ -906,6 +1303,8 @@ function renderMap() {
           document.getElementById("map-msg").textContent = "Gr\u00e4nsen f\u00f6r " + p.name + " \u00e4r raderad.";
         }
       });
+    } else if (editAreaMode) {
+      poly.on("click", e => selectPolygonAt(e.latlng, { type: "paddock", id: p.id }));
     } else {
       poly.on("click", () => {
         const sel = document.getElementById("map-paddock");
@@ -916,6 +1315,7 @@ function renderMap() {
       });
     }
     poly.addTo(mapLayers);
+    if (editAreaMode) editRenderedPolys["paddock:" + p.id] = poly;
     bounds.push(p.boundary);
   }
   for (const m of state.moves) {
@@ -927,9 +1327,11 @@ function renderMap() {
             ? " (betar nu)"
             : " \u00b7 Vila: " + info.restDays + " dag" + (info.restDays === 1 ? "" : "ar") + (info.restOngoing ? " (p\u00e5g\u00e5r)" : ""))
       : "";
-    const area = L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: !drawing })
+    const area = L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: !drawing || editAreaMode })
       .bindPopup(esc(herdName(m.herdId)) + ": " + formatArea(m.sizeHa) + "<br>" + fmtDate(m.date) + (restText ? "<br>" + restText : "") + "<br>Djurdagar: " + moveAnimalDays(m));
-    if (deleting) {
+    if (editAreaMode && !deleting) {
+      area.on("click", e => selectPolygonAt(e.latlng, { type: "move", id: m.id }));
+    } else if (deleting) {
       area.on("click", () => {
         if (window.confirm("Ta bort flytten " + fmtDate(m.date) + " (" + herdName(m.herdId) + ") och dess yta? Flytten raderas \u00e4ven ur statistiken.")) {
           state.moves = state.moves.filter(x => x.id !== m.id);
@@ -941,8 +1343,9 @@ function renderMap() {
       });
     }
     area.addTo(mapLayers);
+    if (editAreaMode) editRenderedPolys["move:" + m.id] = area;
     const badge = moveAreaBadge(info);
-    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: !deleting }).addTo(mapLayers);
+    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: !deleting && !editAreaMode }).addTo(mapLayers);
   }
   for (const h of state.herds) {
     const ms = movesForHerd(h.id);
@@ -961,6 +1364,11 @@ function renderMap() {
         .bindPopup("<strong>" + esc(h.name) + "</strong><br>Betar nu: " + esc(paddockName(last.m.toPaddockId)))
         .addTo(mapLayers);
     }
+  }
+  const selected = document.getElementById("map-paddock").value;
+  if (selected && !drawMode && !moveAreaMode) {
+    const p = paddockById(selected);
+    if (p && p.boundary) { mapInstance.fitBounds(L.latLngBounds(p.boundary), { padding: [40, 40], maxZoom: 17 }); return; }
   }
   if (bounds.length) {
     mapInstance.fitBounds(bounds.flat(), { padding: [30, 30] });
@@ -1395,6 +1803,7 @@ function renderMoves() {
             <input type="text" name="note" placeholder="Valfritt">
           </label>
           <button type="submit" class="primary">Spara flytt</button>
+          <button type="button" class="secondary" data-action="draw-movearea">Rita flyttyta p\u00e5 karta</button>
         </form>
         <p class="note" id="move-msg"></p>` : `
         <p class="empty">Du behöver minst en djurgrupp och en betesmark innan du kan registrera flyttar.</p>
@@ -1492,6 +1901,7 @@ function renderPaddocks() {
         <label>Namn<input type="text" name="name" placeholder="t.ex. Västra ladan" required></label>
         <label>Storlek (ha)<input type="number" name="sizeHa" step="0.01" min="0" placeholder="Valfritt"></label>
         <button type="submit" class="primary">Lägg till</button>
+        <button type="button" class="secondary" data-action="draw-new-paddock">Rita ny betesmark på karta</button>
       </form>
     </div>
     <div class="card">
@@ -2129,11 +2539,21 @@ function render() {
   renderData();
 }
 
+let currentTab = "overview";
 function showTab(tab) {
+  if (tab !== "map") {
+    if (editAreaMode) endEditMode();
+    if (deleteAreaMode) { deleteAreaMode = false; renderMap(); }
+    editScope = currentTab === "moves" ? "moves" : "paddocks";
+  }
+  currentTab = tab;
   document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll("main section").forEach(s => s.classList.toggle("active", s.id === tab));
   if (tab === "map" && mapInstance) {
     setTimeout(() => mapInstance.invalidateSize(), 50);
+  }
+  if (tab === "movearea") {
+    setTimeout(() => { if (moveAreaMap) moveAreaMap.invalidateSize(); }, 50);
   }
 }
 
@@ -2196,6 +2616,15 @@ document.addEventListener("click", e => {
     showTab("moves");
     const sel = document.querySelector('#move-form select[name="herdId"]');
     if (sel) sel.value = btn.dataset.herd;
+    return;
+  }
+  if (action === "draw-movearea") {
+    const herdSel = document.querySelector('#move-form select[name="herdId"]');
+    startMoveAreaPage(herdSel ? herdSel.value : "");
+    return;
+  }
+  if (action === "draw-new-paddock") {
+    startDrawNewPaddock();
     return;
   }
   if (action === "draw-paddock") {
