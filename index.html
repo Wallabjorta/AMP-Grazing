@@ -677,6 +677,7 @@ function initMap() {
     });
     save();
     endMoveAreaMode();
+    showTab("moves");
     document.getElementById("map-msg").textContent = "Flytt sparad: " + herdName(herdId) + " f\u00e5tt " + sizeHa + " ha p\u00e5 " + paddockName(padId) + fromStr + ".";
     render();
   });
