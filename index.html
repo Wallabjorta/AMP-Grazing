@@ -2554,19 +2554,38 @@ async function analyzePhotoWithGemini(dataUrl) {
   const prompt = "Du agerar som ekologisk inköpskontrollant för Debio-varor i Norge och ska alltid godkänna eller underkänna varan. Titta på fotot av etiketten och kontrollera mot Debios krav: 1) Finns ett ekologiskt märke (Debios Ø-merke, EU:s ekologiska blad för importvaror, eller Demeter)? 2) Finns varumärke/producent och en kontrollkod/spårbarhetskod? 3) Innehåller ingredienserna några tillsatser eller driftsmedel som inte är tillåtna i ekologisk produktion enligt Debios driftsmiddelsregister? Börja svaret med raden BEDÖMING: GODKÄND eller BEDÖMING: UNDERKÄND, följt av högst 5 meningar motivering på svenska.";
   const attempts = [
     {
+      name: "interactions",
+      url: "https://generativelanguage.googleapis.com/v1beta/interactions",
+      build: model => ({ model, input: [
+        { type: "image", data: m[2], mime_type: m[1] },
+        { type: "text", text: prompt }
+      ] }),
+      extract: data => {
+        if (Array.isArray(data.model_output)) {
+          for (const step of data.model_output) {
+            const parts = step.content && step.content.parts;
+            if (Array.isArray(parts)) return parts.map(p => p.text || "").join("");
+          }
+        }
+        return (data.outputText || data.output_text || "").toString();
+      }
+    },
+    {
       name: "generateContent",
       url: null,
       build: model => body,
       extract: data => data.candidates && data.candidates[0] && data.candidates[0].content.parts.map(p => p.text).join("") || ""
     }
   ];
-  const models = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"];
+  const models = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash"];
   const lastErrors = [];
   for (const att of attempts) {
     for (const model of models) {
       for (let tryNo = 0; tryNo < 2; tryNo++) {
         try {
-          const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
+          const url = att.name === "interactions"
+            ? att.url
+            : "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
           const res = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-goog-api-key": key },
