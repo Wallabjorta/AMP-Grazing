@@ -36,9 +36,7 @@ async function callGemini(key, imageBase64, mimeType) {
   for (const att of attempts) {
     for (const model of MODELS) {
       for (let tryNo = 0; tryNo < 2; tryNo++) {
-        const url = att.name === "interactions"
-          ? att.url
-          : "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
+        const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
         try {
           const res = await fetch(url, {
             method: "POST",
