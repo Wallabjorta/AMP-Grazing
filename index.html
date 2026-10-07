@@ -1583,6 +1583,7 @@ function renderMoves() {
             <input type="text" name="note" value="${esc(m.note || "")}">
           </label>
           <button type="submit" class="primary small">Spara</button>
+          ${m.areaBoundary && m.areaBoundary.length >= 3 ? '<button type="button" class="secondary small" data-action="edit-move-area" data-id="' + m.id + '" title="Redigera flyttytans hörn på kartan">Redigera yta på karta</button>' : ""}
           <button type="button" class="ghost small" data-action="cancel-edit-move">Avbryt</button>
         </form>
       </td>
@@ -2469,6 +2470,29 @@ document.addEventListener("click", e => {
   if (action === "cancel-edit-move") {
     delete document.getElementById("moves").dataset.editMoveId;
     renderMoves();
+    return;
+  }
+  if (action === "edit-move-area") {
+    const m = state.moves.find(x => x.id === btn.dataset.id);
+    if (!m || !m.areaBoundary || m.areaBoundary.length < 3) return;
+    delete document.getElementById("moves").dataset.editMoveId;
+    editScope = "moves";
+    drawMode = false;
+    drawNewPaddock = false;
+    drawPoints = [];
+    endMoveAreaMode();
+    deleteAreaMode = false;
+    editAreaMode = true;
+    updateDrawUI(false);
+    document.getElementById("draw-cancel").hidden = false;
+    document.getElementById("edit-area-btn").textContent = "Klar";
+    showTab("map");
+    renderMap();
+    startEditPolygonForTarget({ type: "move", id: m.id });
+    if (m.areaBoundary.length >= 3) {
+      const bounds = L.latLngBounds(m.areaBoundary.map(pt => L.latLng(pt[0], pt[1])));
+      mapInstance.fitBounds(bounds, { padding: [40, 40] });
+    }
     return;
   }
   if (action === "del-move") {
