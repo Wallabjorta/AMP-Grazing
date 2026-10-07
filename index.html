@@ -2470,7 +2470,7 @@ function renderInkop() {
           <span>${esc(s.label)}</span>
         </label>`).join("");
   const rows = list.map(k => {
-    const ok = DEBIO_STANDARDS.every(s => k.checks && k.checks[s.id]);
+    const ok = k.aiApproved === true;
     return `
       <tr>
         <td>${esc(fmtDate(k.date))}</td>
@@ -2547,11 +2547,11 @@ async function analyzePhotoWithGemini(dataUrl) {
     contents: [{
       parts: [
         { inline_data: { mime_type: m[1], data: m[2] } },
-        { text: "Detta är ett foto av en matvaras etikett. Analysera: 1) Finns det något ekologiskt märke (Debios Ø-merke, EU-ekologiskt blad, Demeter)? 2) Vilket är varumärket/producenten om det syns? 3) Finns en kontrollkod/spårbarhetskod? Svara kortfattat på svenska, max 5 meningar." }
+        { text: "Du agerar som ekologisk inköpskontrollant för Debio-varor i Norge och ska alltid godkänna eller underkänna varan. Titta på fotot av etiketten och kontrollera mot Debios krav: 1) Finns ett ekologiskt märke (Debios Ø-merke, EU:s ekologiska blad för importvaror, eller Demeter)? 2) Finns varumärke/producent och en kontrollkod/spårbarhetskod? 3) Innehåller ingredienserna några tillsatser eller driftsmedel som inte är tillåtna i ekologisk produktion enligt Debios driftsmiddelsregister? Börja svaret med raden BEDÖMING: GODKÄND eller BEDÖMING: UNDERKÄND, följt av högst 5 meningar motivering på svenska." }
       ]
     }]
   };
-  const prompt = "Detta är ett foto av en matvaras etikett. Analysera: 1) Finns det något ekologiskt märke (Debios Ø-merke, EU-ekologiskt blad, Demeter)? 2) Vilket är varumärket/producenten om det syns? 3) Finns en kontrollkod/spårbarhetskod? Svara kortfattat på svenska, max 5 meningar.";
+  const prompt = "Du agerar som ekologisk inköpskontrollant för Debio-varor i Norge och ska alltid godkänna eller underkänna varan. Titta på fotot av etiketten och kontrollera mot Debios krav: 1) Finns ett ekologiskt märke (Debios Ø-merke, EU:s ekologiska blad för importvaror, eller Demeter)? 2) Finns varumärke/producent och en kontrollkod/spårbarhetskod? 3) Innehåller ingredienserna några tillsatser eller driftsmedel som inte är tillåtna i ekologisk produktion enligt Debios driftsmiddelsregister? Börja svaret med raden BEDÖMING: GODKÄND eller BEDÖMING: UNDERKÄND, följt av högst 5 meningar motivering på svenska.";
   const attempts = [
     {
       name: "interactions",
@@ -2732,7 +2732,7 @@ document.addEventListener("change", e => {
             aiOut.innerHTML = `<span style="color:var(--green);font-weight:600">AI-analys:</span> ${esc(r.text)}`;
           } else {
             delete form.dataset.aiResult;
-            aiOut.innerHTML = `<span style="color:var(--danger)">${esc(r.error)}</span> Fotot sparas ändå med kontrollen.`;
+            aiOut.innerHTML = `<span style="color:var(--danger)">${esc(r.error)}</span> Inköpskontrollen kan inte sparas utan en AI-godkännande analys (BEDÖMING: GODKÄND) – försök igen.`;
           }
         });
       };
@@ -3017,6 +3017,11 @@ document.addEventListener("submit", e => {
     const date = fd.get("date");
     const varu = (fd.get("varu") || "").trim();
     if (!date || !varu) return;
+    const aiRes = form.dataset.aiResult || "";
+    if (!/BED\u00d6MING:\s*GODK\u00c4ND/i.test(aiRes)) {
+      alert("Kontrollen m\u00e5ste godk\u00e4nnas av AI f\u00f6rst: ta ett foto av etiketten och v\u00e4nta p\u00e5 AI-analysen (BED\u00d6MING: GODK\u00c4ND) innan du sparar.");
+      return;
+    }
     const checks = {};
     for (const s of DEBIO_STANDARDS) checks[s.id] = !!fd.get("chk_" + s.id);
     state.inkop = state.inkop || [];
@@ -3028,6 +3033,7 @@ document.addEventListener("submit", e => {
       producent: (fd.get("producent") || "").trim(),
       checks,
       aiResult: form.dataset.aiResult || null,
+      aiApproved: /BED\u00d6MING:\s*GODK\u00c4ND/i.test(form.dataset.aiResult || ""),
       photo: form.dataset.photo || null
     };
     state.inkop.push(entry);

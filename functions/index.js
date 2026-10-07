@@ -2,7 +2,7 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 
 const MODELS = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash"];
-const PROMPT = "Detta \u00e4r ett foto av en matvaras etikett. Analysera: 1) Finns det n\u00e5got ekologiskt m\u00e4rke (Debios \u00d8-merke, EU-ekologiskt blad, Demeter)? 2) Vilket \u00e4r varum\u00e4rket/producenten om det syns? 3) Finns en kontrollkod/sp\u00e5rbarhetskod? Svara kortfattat p\u00e5 svenska, max 5 meningar.";
+const PROMPT = "Du agerar som ekologisk ink\u00f6pskontrollant f\u00f6r Debio-varor i Norge och ska alltid godk\u00e4nna eller underk\u00e4nna varan. Titta p\u00e5 fotot av etiketten och kontrollera mot Debios krav: 1) Finns ett ekologiskt m\u00e4rke (Debios \u00d8-merke, EU:s ekologiska blad f\u00f6r importvaror, eller Demeter)? 2) Finns varum\u00e4rke/producent och en kontrollkod/sp\u00e5rbarhetskod? 3) Inneh\u00e5ller ingredienserna n\u00e5gra tillsatser eller driftsmedel som inte \u00e4r till\u00e5tna i ekologisk produktion enligt Debios driftsmiddelsregister? B\u00f6rja svaret med raden BED\u00d6MING: GODK\u00c4ND eller BED\u00d6MING: UNDERK\u00c4ND, f\u00f6ljt av h\u00f6gst 5 meningar motivering p\u00e5 svenska.";
 
 function extractInteractionsText(data) {
   if (Array.isArray(data.model_output)) {
