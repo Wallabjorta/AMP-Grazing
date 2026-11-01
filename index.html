@@ -971,11 +971,12 @@ function renderMoveAreaPage() {
     }
   }
   for (const m of state.moves) {
-    if (!m.areaBoundary) continue;
-    L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: false })
+    const boundary = moveAreaBoundary(m);
+    if (!boundary) continue;
+    L.polygon(boundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: false })
       .addTo(moveAreaMapLayers);
     const badge = moveAreaBadge(moveAreaRestInfo(m));
-    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: false }).addTo(moveAreaMapLayers);
+    if (badge) L.marker(paddockCenter(boundary), { icon: badge, interactive: false }).addTo(moveAreaMapLayers);
   }
   if (moveAreaPagePoints.length) {
     L.polygon(moveAreaPagePoints, { color: "#c47f17", weight: 2, dashArray: "6 4", fillOpacity: 0.15 }).addTo(moveAreaMapLayers);
@@ -1405,16 +1406,18 @@ function renderDrawPreview() {
     }
   }
   for (const m of state.moves) {
-    if (!m.areaBoundary) continue;
-    L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: false })
+    const boundary = moveAreaBoundary(m);
+    if (!boundary) continue;
+    L.polygon(boundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: false })
       .addTo(mapLayers);
   }
   for (const m of state.moves) {
-    if (!m.areaBoundary) continue;
-    L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: false })
+    const boundary = moveAreaBoundary(m);
+    if (!boundary) continue;
+    L.polygon(boundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: false })
       .addTo(mapLayers);
     const badge = moveAreaBadge(moveAreaRestInfo(m));
-    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: false }).addTo(mapLayers);
+    if (badge) L.marker(paddockCenter(boundary), { icon: badge, interactive: false }).addTo(mapLayers);
   }
   if (drawPoints.length) {
     L.polygon(drawPoints, { color: "#c47f17", weight: 2, dashArray: "6 4", fillOpacity: 0.1 }).addTo(mapLayers);
@@ -1461,7 +1464,8 @@ function renderMap() {
     bounds.push(p.boundary);
   }
   for (const m of state.moves) {
-    if (!m.areaBoundary) continue;
+    const boundary = moveAreaBoundary(m);
+    if (!boundary) continue;
     const info = moveAreaRestInfo(m);
     const restText = info
       ? "Betat: " + info.grazeDays + " dag" + (info.grazeDays === 1 ? "" : "ar")
@@ -1469,7 +1473,7 @@ function renderMap() {
             ? " (betar nu)"
             : " \u00b7 Vila: " + info.restDays + " dag" + (info.restDays === 1 ? "" : "ar") + (info.restOngoing ? " (p\u00e5g\u00e5r)" : ""))
       : "";
-    const area = L.polygon(m.areaBoundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: !drawing || editAreaMode })
+    const area = L.polygon(boundary, { color: "#c47f17", weight: 1.5, fillOpacity: 0.12, dashArray: "4 4", interactive: !drawing || editAreaMode })
       .bindPopup(esc(herdName(m.herdId)) + ": " + formatArea(m.sizeHa) + "<br>" + fmtDate(m.date) + (restText ? "<br>" + restText : "") + "<br>Djurdagar: " + moveAnimalDays(m));
     if (editAreaMode && !deleting) {
       area.on("click", e => selectPolygonAt(e.latlng, { type: "move", id: m.id }));
@@ -1487,7 +1491,7 @@ function renderMap() {
     area.addTo(mapLayers);
     if (editAreaMode) editRenderedPolys["move:" + m.id] = area;
     const badge = moveAreaBadge(info);
-    if (badge) L.marker(paddockCenter(m.areaBoundary), { icon: badge, interactive: !deleting && !editAreaMode }).addTo(mapLayers);
+    if (badge) L.marker(paddockCenter(boundary), { icon: badge, interactive: !deleting && !editAreaMode }).addTo(mapLayers);
   }
   for (const h of state.herds) {
     const ms = movesForHerd(h.id);
@@ -1622,6 +1626,12 @@ function esc(s) {
 }
 
 function paddockById(id) { return state.paddocks.find(p => p.id === id) || null; }
+
+function moveAreaBoundary(m) {
+  if (m.areaBoundary && m.areaBoundary.length >= 3) return m.areaBoundary;
+  const p = paddockById(m.toPaddockId);
+  return p && p.boundary && p.boundary.length >= 3 ? p.boundary : null;
+}
 function herdById(id) { return state.herds.find(h => h.id === id) || null; }
 function paddockName(id) { const p = paddockById(id); return p ? p.name : "–"; }
 function herdName(id) { const h = herdById(id); return h ? h.name : "–"; }
@@ -1990,7 +2000,11 @@ function renderMoves() {
         const cur = currentPaddockId(herdId);
         if (cur && cur !== from && !confirm("Gruppen betar nu " + paddockName(cur) + ". Spara flytt från " + paddockName(from) + " ändå?")) return;
       }
-      state.moves.push({ id: uid(), herdId, fromPaddockId: from, toPaddockId: to, date, time, note, sizeHa });
+      const toPad = paddockById(to);
+      const areaBoundary = toPad && toPad.boundary && toPad.boundary.length >= 3
+        ? toPad.boundary.map(pt => [Math.round(pt[0] * 1e6) / 1e6, Math.round(pt[1] * 1e6) / 1e6])
+        : null;
+      state.moves.push({ id: uid(), herdId, fromPaddockId: from, toPaddockId: to, date, time, note, sizeHa: sizeHa != null ? sizeHa : (areaBoundary ? polygonAreaHa(areaBoundary) : null), areaBoundary });
       save();
       render();
     });
@@ -2331,12 +2345,12 @@ async function buildPrintReport() {
   const totalMoves = state.moves.length;
   const header = "<h1>AMP Betesflytt \u2013 rapport</h1>"
     + "<p>" + todayIso() + " \u00b7 " + state.paddocks.length + " marker \u00b7 " + state.herds.length + " djurgrupper \u00b7 " + totalMoves + " flyttar</p>";
-  const areaMoves = state.moves.filter(m => m.areaBoundary);
+  const areaMoves = state.moves.filter(m => moveAreaBoundary(m));
   for (const p of state.paddocks) {
     const inMoves = state.moves.filter(m => m.toPaddockId === p.id).sort(compareMove);
     const areas = areaMoves
       .filter(m => m.toPaddockId === p.id)
-      .map(m => { const a = m.areaBoundary.slice(); a.restInfo = moveAreaRestInfo(m); return a; });
+      .map(m => { const a = moveAreaBoundary(m).slice(); a.restInfo = moveAreaRestInfo(m); return a; });
     const mapData = await reportMapImage(p.boundary, areas);
     const mapImg = mapData ? '<img class="pr-map" src="' + mapData + '" alt="">' : '<p class="note">Ingen karta \u2013 marken saknar gr\u00e4ns.</p>';
     const rows = inMoves.map(m => "<tr><td>" + fmtDate(m.date) + "</td><td>" + esc(herdName(m.herdId)) + "</td><td>"
@@ -2470,7 +2484,7 @@ function renderInkop() {
           <span>${esc(s.label)}</span>
         </label>`).join("");
   const rows = list.map(k => {
-    const ok = DEBIO_STANDARDS.every(s => k.checks && k.checks[s.id]);
+    const ok = k.aiApproved === true;
     return `
       <tr>
         <td>${esc(fmtDate(k.date))}</td>
@@ -2547,11 +2561,11 @@ async function analyzePhotoWithGemini(dataUrl) {
     contents: [{
       parts: [
         { inline_data: { mime_type: m[1], data: m[2] } },
-        { text: "Detta är ett foto av en matvaras etikett. Analysera: 1) Finns det något ekologiskt märke (Debios Ø-merke, EU-ekologiskt blad, Demeter)? 2) Vilket är varumärket/producenten om det syns? 3) Finns en kontrollkod/spårbarhetskod? Svara kortfattat på svenska, max 5 meningar." }
+        { text: "Du agerar som ekologisk inköpskontrollant för en Debio-godkänd gård i Norge och ska alltid godkänna eller underkänna varan. Titta på fotot av etiketten och avgör först varans typ. A) Livsmedel eller ekologisk produkt som säljs som ekologisk: kontrollera att ett ekologiskt märke finns (Debios Ø-merke, EU:s ekologiska blad, eller Demeter) samt varumärke/producent och kontrollkod/spårbarhetskod. B) Driftsmedel eller fodermedel för bruk på gården (t.ex. saltsten/mineralsalt, kalk, spårämnen, mineralsk tillskott, fodertillskott): sådana varor behöver INTE något ekologiskt märke. Kontrollera i stället mot Debios driftsmiddelsregister och förordning (EU) 2021/1165: mineraler, spårämnen och salt är generellt tillåtna driftsmedel, och etikettext som 'godkjent for økologisk produksjon', 'kan brukes i økologisk produksjon' eller en hänvisning till ekologisk förordning (t.ex. EF 834/2007) styrker att ämnet är tillåtet. Godkänn sådana varor när producenten anges på etiketten; underkänn bara om ämnet uttryckligen är förbjudet eller innehåller syntetiska tillsatser som inte är tillåtna i ekologisk produktion. Börja svaret med raden BEDÖMING: GODKÄND eller BEDÖMING: UNDERKÄND, följt av högst 5 meningar motivering på svenska." }
       ]
     }]
   };
-  const prompt = "Detta är ett foto av en matvaras etikett. Analysera: 1) Finns det något ekologiskt märke (Debios Ø-merke, EU-ekologiskt blad, Demeter)? 2) Vilket är varumärket/producenten om det syns? 3) Finns en kontrollkod/spårbarhetskod? Svara kortfattat på svenska, max 5 meningar.";
+  const prompt = "Du agerar som ekologisk inköpskontrollant för en Debio-godkänd gård i Norge och ska alltid godkänna eller underkänna varan. Titta på fotot av etiketten och avgör först varans typ. A) Livsmedel eller ekologisk produkt som säljs som ekologisk: kontrollera att ett ekologiskt märke finns (Debios Ø-merke, EU:s ekologiska blad, eller Demeter) samt varumärke/producent och kontrollkod/spårbarhetskod. B) Driftsmedel eller fodermedel för bruk på gården (t.ex. saltsten/mineralsalt, kalk, spårämnen, mineralsk tillskott, fodertillskott): sådana varor behöver INTE något ekologiskt märke. Kontrollera i stället mot Debios driftsmiddelsregister och förordning (EU) 2021/1165: mineraler, spårämnen och salt är generellt tillåtna driftsmedel, och etikettext som 'godkjent for økologisk produksjon', 'kan brukes i økologisk produksjon' eller en hänvisning till ekologisk förordning (t.ex. EF 834/2007) styrker att ämnet är tillåtet. Godkänn sådana varor när producenten anges på etiketten; underkänn bara om ämnet uttryckligen är förbjudet eller innehåller syntetiska tillsatser som inte är tillåtna i ekologisk produktion. Börja svaret med raden BEDÖMING: GODKÄND eller BEDÖMING: UNDERKÄND, följt av högst 5 meningar motivering på svenska.";
   const attempts = [
     {
       name: "interactions",
@@ -2732,7 +2746,7 @@ document.addEventListener("change", e => {
             aiOut.innerHTML = `<span style="color:var(--green);font-weight:600">AI-analys:</span> ${esc(r.text)}`;
           } else {
             delete form.dataset.aiResult;
-            aiOut.innerHTML = `<span style="color:var(--danger)">${esc(r.error)}</span> Fotot sparas ändå med kontrollen.`;
+            aiOut.innerHTML = `<span style="color:var(--danger)">${esc(r.error)}</span> Inköpskontrollen kan inte sparas utan en AI-godkännande analys (BEDÖMING: GODKÄND) – försök igen.`;
           }
         });
       };
@@ -3017,6 +3031,11 @@ document.addEventListener("submit", e => {
     const date = fd.get("date");
     const varu = (fd.get("varu") || "").trim();
     if (!date || !varu) return;
+    const aiRes = form.dataset.aiResult || "";
+    if (!/BED\u00d6MING:\s*GODK\u00c4ND/i.test(aiRes)) {
+      alert("Kontrollen m\u00e5ste godk\u00e4nnas av AI f\u00f6rst: ta ett foto av etiketten och v\u00e4nta p\u00e5 AI-analysen (BED\u00d6MING: GODK\u00c4ND) innan du sparar.");
+      return;
+    }
     const checks = {};
     for (const s of DEBIO_STANDARDS) checks[s.id] = !!fd.get("chk_" + s.id);
     state.inkop = state.inkop || [];
@@ -3028,6 +3047,7 @@ document.addEventListener("submit", e => {
       producent: (fd.get("producent") || "").trim(),
       checks,
       aiResult: form.dataset.aiResult || null,
+      aiApproved: /BED\u00d6MING:\s*GODK\u00c4ND/i.test(form.dataset.aiResult || ""),
       photo: form.dataset.photo || null
     };
     state.inkop.push(entry);
